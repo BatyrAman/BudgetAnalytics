@@ -34,6 +34,10 @@ from app.services.finance.loans import monthly_rate
 from app.services.finance.money import ZERO, MoneyError, quantize_money
 
 MAX_SIMULATION_MONTHS = 600
+# Долг считается «неподъёмным», если суммарный остаток рос столько
+# месяцев подряд или вырос во столько раз от начального.
+MAX_GROWTH_STREAK = 36
+MAX_GROWTH_FACTOR = 100
 
 
 class DebtType(StrEnum):
@@ -199,8 +203,13 @@ def simulate(
     def open_states() -> list[_State]:
         return [s for s in states if s.balance > 0]
 
+    initial_total = sum((s.balance for s in states), ZERO)
+    previous_total = initial_total
+    growth_streak = 0
+
     while open_states():
-        if month >= max_months:
+        diverging = growth_streak >= MAX_GROWTH_STREAK or previous_total > initial_total * MAX_GROWTH_FACTOR
+        if month >= max_months or diverging:
             return SimulationResult(
                 strategy=strategy,
                 extra_payment=extra,
@@ -269,6 +278,9 @@ def simulate(
         month_payment = sum(payments.values(), ZERO)
         total_interest += month_interest
         total_paid += month_payment
+        month_total = sum((s.balance for s in states), ZERO)
+        growth_streak = growth_streak + 1 if month_total > previous_total else 0
+        previous_total = month_total
 
         timeline.append(
             MonthSnapshot(
@@ -276,7 +288,7 @@ def simulate(
                 date=current_date,
                 interest=month_interest,
                 payment=month_payment,
-                total_balance=sum((s.balance for s in states), ZERO),
+                total_balance=month_total,
                 balances={s.key: s.balance for s in states},
                 payments=payments,
                 closed=tuple(closed),

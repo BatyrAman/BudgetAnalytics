@@ -35,6 +35,18 @@ class CardType(str, enum.Enum):
     CREDIT = "credit"
 
 
+class DebtScheduleType(str, enum.Enum):
+    ANNUITY = "annuity"
+    DIFFERENTIAL = "differential"
+    # Кредитная карта / личный долг: только минимальный платёж.
+    REVOLVING = "revolving"
+
+
+class DebtPaymentStatus(str, enum.Enum):
+    PAID = "paid"
+    REVERSED = "reversed"
+
+
 class ImportStatus(str, enum.Enum):
     """
     Состояния импорта выписки:

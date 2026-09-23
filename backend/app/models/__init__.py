@@ -8,6 +8,7 @@ from app.models.statement_import import StatementImport
 from app.models.transaction import Transaction
 from app.models.budget import Budget
 from app.models.deposit import Deposit
+from app.models.debt import Debt, DebtPayment
 from app.models.enums import CardType, CategoryKind, CategorySource, ImportStatus, TransactionType
 
 __all__ = [
@@ -20,6 +21,8 @@ __all__ = [
     "Transaction",
     "Budget",
     "Deposit",
+    "Debt",
+    "DebtPayment",
     "TransactionType",
     "CategoryKind",
     "CardType",

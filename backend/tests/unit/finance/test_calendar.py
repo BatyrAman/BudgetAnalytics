@@ -1,6 +1,6 @@
 from datetime import date
 
-from app.services.finance.calendar import add_months, months_between, next_payment_date
+from app.services.finance.calendar import add_months, count_payment_dates, months_between, next_payment_date
 
 
 def test_month_end_is_clamped_and_anchor_day_restored():
@@ -33,3 +33,11 @@ def test_months_between():
     assert months_between(date(2025, 1, 15), date(2025, 7, 14)) == 5
     assert months_between(date(2025, 1, 31), date(2025, 2, 28)) == 1
     assert months_between(date(2025, 7, 1), date(2025, 1, 1)) == 0
+
+
+def test_count_payment_dates():
+    # старт 23.09.2026, платежи 10-го числа, окончание 10.09.2028 → 24 платежа
+    assert count_payment_dates(date(2026, 9, 23), date(2028, 9, 10), 10) == 24
+    assert count_payment_dates(date(2026, 9, 10), date(2026, 9, 10), 10) == 1
+    assert count_payment_dates(date(2026, 9, 11), date(2026, 9, 30), 10) == 0
+    assert count_payment_dates(date(2025, 1, 1), date(2025, 3, 31), 31) == 3

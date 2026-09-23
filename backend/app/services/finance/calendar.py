@@ -51,3 +51,15 @@ def months_between(start: date, end: date) -> int:
     if end.day < start.day and end.day != days_in_month(end.year, end.month):
         months -= 1
     return max(months, 0)
+
+
+def count_payment_dates(today: date, end: date, payment_day: int) -> int:
+    """Число плановых дат платежа в интервале [today, end]."""
+
+    first = next_payment_date(today, payment_day)
+    if first > end:
+        return 0
+    count = 1
+    while add_months(first, count, payment_day) <= end:
+        count += 1
+    return count

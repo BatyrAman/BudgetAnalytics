@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,7 +25,7 @@ from app.schemas.auth import (
     RegisterRequest,
     Token,
 )
-from app.schemas.user import UserResponse
+from app.schemas.user import FinancialProfileResponse, FinancialProfileUpdate, UserResponse
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
@@ -185,4 +187,32 @@ async def change_password(
 async def get_me(
     current_user: User = Depends(get_current_active_user),
 ) -> User:
+    return current_user
+
+
+@router.get("/me/profile", response_model=FinancialProfileResponse)
+async def get_profile(current_user: User = Depends(get_current_active_user)) -> User:
+    return current_user
+
+
+@router.put("/me/profile", response_model=FinancialProfileResponse)
+async def update_profile(
+    payload: FinancialProfileUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Финансовый профиль: заявленный доход, иждивенцы, город, согласие на обработку ПДн."""
+
+    updates = payload.model_dump(exclude_unset=True)
+    consent = updates.pop("consent", None)
+    for field, value in updates.items():
+        if field == "dependents" and value is None:
+            continue
+        setattr(current_user, field, value)
+    if consent is True and current_user.consent_at is None:
+        current_user.consent_at = datetime.now(timezone.utc)
+    elif consent is False:
+        current_user.consent_at = None
+    await db.commit()
+    await db.refresh(current_user)
     return current_user

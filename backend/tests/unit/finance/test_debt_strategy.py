@@ -126,6 +126,15 @@ def test_infeasible_when_payment_below_interest():
     assert result.payoff_date is None
 
 
+def test_exploding_debt_stops_early_without_overflow():
+    a = debt(1, 500_000, 120, 10_000, DebtType.MICROLOAN)  # 10%/мес при платеже 2%
+    result = simulate([a], 0, start_date=START)
+    assert not result.feasible
+    assert result.months <= 40
+    baseline = compare_strategies([a], 0, start_date=START).baseline
+    assert not baseline.feasible
+
+
 def test_extra_makes_infeasible_feasible():
     a = debt(1, 1_000_000, 60, 10_000, DebtType.MICROLOAN)
     assert simulate([a], 100_000, start_date=START).feasible
