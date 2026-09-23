@@ -17,3 +17,8 @@ extend-exclude = ["alembic/versions"]
 select = ["F", "E9", "B", "I"]
 # B008: FastAPI Depends()/Query() в значениях по умолчанию — идиома фреймворка.
 ignore = ["B008"]
+
+[tool.ruff.lint.isort]
+# Локальная папка alembic/ — это миграции, а пакет alembic — сторонний.
+known-third-party = ["alembic"]
+known-first-party = ["app", "tests"]

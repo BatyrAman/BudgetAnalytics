@@ -131,3 +131,8 @@ async def test_unauthenticated_requests_are_rejected(client):
         response = await client.get(API + path)
         assert response.status_code == 401
         assert response.headers.get("www-authenticate") == "Bearer"
+
+
+async def test_health_endpoints(client):
+    assert (await client.get("/health")).json()["status"] == "healthy"
+    assert (await client.get("/health/ready")).json() == {"status": "ready"}

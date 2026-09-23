@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api import api_router
 from app.core.config import settings
@@ -77,6 +79,17 @@ def create_app() -> FastAPI:
             "service": settings.APP_NAME,
             "version": settings.VERSION,
         }
+
+    @app.get("/health/ready", tags=["Health"])
+    async def readiness():
+        """Готовность к трафику: БД доступна."""
+
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        except Exception:
+            return JSONResponse(status_code=503, content={"status": "unavailable"})
+        return {"status": "ready"}
 
     @app.get("/home", tags=["Home"], include_in_schema=False)
     async def home():
