@@ -1,0 +1,2 @@
+-r requirements.txt
+arq>=0.26

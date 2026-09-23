@@ -9,6 +9,7 @@ from app.api import (
     debts,
     finance,
     investment,
+    products,
     transaction,
     upload,
 )
@@ -25,5 +26,6 @@ api_router.include_router(investment.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(analytics.router)
 api_router.include_router(finance.router)
+api_router.include_router(products.router)
 
 __all__ = ["api_router"]

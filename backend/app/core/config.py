@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     # --- finance defaults ---
     DEFAULT_CURRENCY: str = "KZT"
 
+    # --- background tasks ---
+    REDIS_URL: str = "redis://localhost:6379/0"
+    # JSON-файл с актуальными условиями банков для update_bank_products.
+    BANK_PRODUCTS_FILE: str | None = None
+
     model_config = SettingsConfigDict(
         env_file=".env",
         extra="ignore",

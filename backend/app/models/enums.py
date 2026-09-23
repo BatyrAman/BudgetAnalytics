@@ -76,3 +76,13 @@ IMPORT_TRANSITIONS: dict[ImportStatus, set[ImportStatus]] = {
     ImportStatus.PARTIAL: set(),
     ImportStatus.FAILED: set(),
 }
+
+
+class ProductType(str, enum.Enum):
+    CONSUMER_LOAN = "consumer_loan"
+    MORTGAGE = "mortgage"
+    AUTO_LOAN = "auto_loan"
+    CREDIT_CARD = "credit_card"
+    INSTALLMENT = "installment"
+    MICROLOAN = "microloan"
+    DEPOSIT = "deposit"

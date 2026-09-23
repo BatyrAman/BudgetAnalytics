@@ -10,7 +10,9 @@ from app.models.budget import Budget
 from app.models.deposit import Deposit
 from app.models.debt import Debt, DebtPayment
 from app.models.refresh_token import RefreshToken
-from app.models.enums import CardType, CategoryKind, CategorySource, ImportStatus, TransactionType
+from app.models.bank_product import BankProduct
+from app.models.reports import MonthlyReport, PaymentReminder
+from app.models.enums import CardType, CategoryKind, CategorySource, ImportStatus, ProductType, TransactionType
 
 __all__ = [
     "Base",
@@ -25,9 +27,13 @@ __all__ = [
     "Debt",
     "DebtPayment",
     "RefreshToken",
+    "BankProduct",
+    "MonthlyReport",
+    "PaymentReminder",
     "TransactionType",
     "CategoryKind",
     "CardType",
     "CategorySource",
     "ImportStatus",
+    "ProductType",
 ]
