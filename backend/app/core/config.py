@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     # --- finance defaults ---
     DEFAULT_CURRENCY: str = "KZT"
 
+    # --- AI (пока только интерфейсы) ---
+    AI_PROVIDER: str = "disabled"
+
     # --- background tasks ---
     REDIS_URL: str = "redis://localhost:6379/0"
     # JSON-файл с актуальными условиями банков для update_bank_products.
