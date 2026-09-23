@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.services.finance.cashflow import growth_percent, monthly_average, savings_rate
 from app.services.finance.deposits import (
     Capitalization,
     DayCount,
@@ -14,7 +15,6 @@ from app.services.finance.emergency_fund import IncomeStability, calculate_emerg
 from app.services.finance.loans import LoanError, ScheduleType
 from app.services.finance.money import MoneyError, quantize_money
 from app.services.finance.mortgages import calculate_mortgage
-from app.services.finance.cashflow import growth_percent, monthly_average, savings_rate
 
 D = Decimal
 

@@ -30,7 +30,7 @@ from app.services.finance.affordability import AffordabilityInput, Affordability
 from app.services.finance.deposits import calculate_deposit
 from app.services.finance.emergency_fund import calculate_emergency_fund
 from app.services.finance.loans import LoanSchedule, build_schedule, schedule_gesv
-from app.services.finance.money import MoneyError, ZERO
+from app.services.finance.money import ZERO, MoneyError
 from app.services.finance.mortgages import calculate_mortgage
 from app.services.profile import FinancialProfile, FinancialProfileService
 

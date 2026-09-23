@@ -45,12 +45,12 @@ async def get_current_user(
     try:
         payload = decode_token(token, expected_type="access")
     except TokenError:
-        raise AuthenticationError()
+        raise AuthenticationError() from None
 
     try:
         user_id = int(payload.get("sub"))
     except (TypeError, ValueError):
-        raise AuthenticationError()
+        raise AuthenticationError() from None
 
     user = await UserRepository(db).get(user_id)
     # token_version отзывает все access-токены после смены пароля

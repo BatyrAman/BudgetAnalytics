@@ -27,7 +27,7 @@ from app.models.enums import ProductType
 from app.models.user import User
 from app.schemas.analytics_overview import OverviewSummary
 from app.schemas.common import MoneyDecimal, NonNegativeMoney, PercentDecimal
-from app.schemas.debt import DebtResponse, StrategyRequest, StrategyResponse, UpcomingPayment
+from app.schemas.debt import StrategyRequest, StrategyResponse
 from app.schemas.finance import (
     AffordabilityRequest,
     AffordabilityResponse,

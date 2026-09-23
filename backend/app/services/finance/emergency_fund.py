@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from decimal import ROUND_CEILING, Decimal
 from enum import StrEnum
 
-from app.services.finance.money import ZERO, MoneyError, quantize_money, to_decimal
+from app.services.finance.money import ZERO, MoneyError, quantize_money
 
 
 class IncomeStability(StrEnum):

@@ -1,13 +1,10 @@
 from datetime import date
 from decimal import Decimal
 
-import pytest
-
 from app.services.finance.debt_strategy import (
     DebtInput,
     DebtType,
     Strategy,
-    StrategyError,
     compare_strategies,
     simulate,
 )

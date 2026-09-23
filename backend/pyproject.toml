@@ -7,3 +7,13 @@ markers = [
     "integration: requires PostgreSQL (TEST_DATABASE_URL)",
 ]
 filterwarnings = []
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["F", "E9", "B", "I"]
+# B008: FastAPI Depends()/Query() в значениях по умолчанию — идиома фреймворка.
+ignore = ["B008"]

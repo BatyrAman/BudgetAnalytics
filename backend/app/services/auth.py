@@ -98,17 +98,17 @@ class AuthService:
     async def refresh(self, token: str | None) -> TokenPair:
         invalid = AuthenticationError("Invalid or expired refresh token", code="INVALID_REFRESH_TOKEN")
         if not token:
-            raise invalid
+            raise invalid from None
         try:
             payload = decode_token(token, "refresh")
             user_id = int(payload["sub"])
         except (TokenError, KeyError, TypeError, ValueError):
-            raise invalid
+            raise invalid from None
 
         now = datetime.now(timezone.utc)
         stored = await self.tokens.get_for_update(payload["jti"])
         if stored is None or stored.user_id != user_id or stored.expires_at <= now:
-            raise invalid
+            raise invalid from None
 
         if stored.revoked_at is not None:
             # Повторное использование — отзываем всю цепочку.
@@ -119,7 +119,7 @@ class AuthService:
 
         user = await self.users.get(user_id)
         if user is None or not user.is_active:
-            raise invalid
+            raise invalid from None
 
         pair = await self._issue(user, stored.family_id)
         stored.revoked_at = now

@@ -318,7 +318,7 @@ class StatementImportService:
 
         # Категории из выписки, которых ещё нет, создаём как
         # пользовательские (не глобальные!) — по одной на имя.
-        for (_, kind_value), group in unresolved_hints.items():
+        for group in unresolved_hints.values():
             name = group[0].category_hint[:100]
             kind = kind_for(group[0].transaction_type)
             category = self.categories.add(Category(user_id=user_id, name=name, kind=kind))

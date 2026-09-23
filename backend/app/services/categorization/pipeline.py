@@ -51,7 +51,7 @@ class CategoryDirectory:
     def __init__(self, entries: list[tuple[int, str, CategoryKind, bool]]) -> None:
         self._by_key: dict[tuple[str, CategoryKind], int] = {}
         # сначала системные, затем пользовательские — последние перезапишут
-        for category_id, name, kind, is_user in sorted(entries, key=lambda e: e[3]):
+        for category_id, name, kind, _is_user in sorted(entries, key=lambda e: e[3]):
             self._by_key[(name.strip().lower(), CategoryKind(kind))] = category_id
 
     def find(self, name: str, kind: CategoryKind) -> int | None:
