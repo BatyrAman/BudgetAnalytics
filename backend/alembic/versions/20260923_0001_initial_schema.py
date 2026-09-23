@@ -1,0 +1,102 @@
+"""initial schema
+
+Схема в том виде, в каком она описана моделями первого коммита
+(users, banks, categories, budgets, deposits, transactions).
+Для БД, созданных ранее вручную: `alembic stamp 0001`.
+
+Revision ID: 0001
+Revises: 
+Create Date: 2026-09-23 18:10:56.048241
+
+"""
+from typing import Sequence, Union
+
+from alembic import op
+import sqlalchemy as sa
+
+
+revision: str = '0001'
+down_revision: Union[str, None] = None
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+
+
+def upgrade() -> None:
+    op.create_table('banks',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(length=100), nullable=False),
+    sa.Column('logo', sa.String(length=255), nullable=True),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_banks')),
+    sa.UniqueConstraint('name', name=op.f('uq_banks_name'))
+    )
+    op.create_table('categories',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('name', sa.String(length=100), nullable=False),
+    sa.Column('color', sa.String(length=30), nullable=False),
+    sa.Column('icon', sa.String(length=50), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_categories')),
+    sa.UniqueConstraint('name', name=op.f('uq_categories_name'))
+    )
+    op.create_table('users',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('full_name', sa.String(length=255), nullable=False),
+    sa.Column('email', sa.String(length=255), nullable=False),
+    sa.Column('hashed_password', sa.String(length=255), nullable=False),
+    sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_users'))
+    )
+    op.create_index(op.f('ix_users_email'), 'users', ['email'], unique=True)
+    op.create_table('budgets',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('title', sa.String(length=100), nullable=False),
+    sa.Column('monthly_limit', sa.Numeric(precision=12, scale=2), nullable=False),
+    sa.Column('spent', sa.Numeric(precision=12, scale=2), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_budgets_user_id_users')),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_budgets'))
+    )
+    op.create_table('deposits',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('amount', sa.Numeric(precision=12, scale=2), nullable=False),
+    sa.Column('interest_rate', sa.Numeric(precision=5, scale=2), nullable=False),
+    sa.Column('start_date', sa.Date(), nullable=False),
+    sa.Column('end_date', sa.Date(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('bank_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['bank_id'], ['banks.id'], name=op.f('fk_deposits_bank_id_banks')),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_deposits_user_id_users')),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_deposits'))
+    )
+    op.create_table('transactions',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('amount', sa.Numeric(precision=12, scale=2), nullable=False),
+    sa.Column('description', sa.String(length=500), nullable=True),
+    sa.Column('transaction_type', sa.Enum('INCOME', 'EXPENSE', name='transactiontype'), nullable=False),
+    sa.Column('transaction_date', sa.DateTime(), nullable=False),
+    sa.Column('user_id', sa.Integer(), nullable=False),
+    sa.Column('category_id', sa.Integer(), nullable=False),
+    sa.Column('bank_id', sa.Integer(), nullable=False),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
+    sa.ForeignKeyConstraint(['bank_id'], ['banks.id'], name=op.f('fk_transactions_bank_id_banks')),
+    sa.ForeignKeyConstraint(['category_id'], ['categories.id'], name=op.f('fk_transactions_category_id_categories')),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], name=op.f('fk_transactions_user_id_users')),
+    sa.PrimaryKeyConstraint('id', name=op.f('pk_transactions'))
+    )
+
+
+def downgrade() -> None:
+    op.drop_table('transactions')
+    op.drop_table('deposits')
+    op.drop_table('budgets')
+    op.drop_index(op.f('ix_users_email'), table_name='users')
+    op.drop_table('users')
+    op.drop_table('categories')
+    op.drop_table('banks')
+    sa.Enum(name='transactiontype').drop(op.get_bind(), checkfirst=True)
