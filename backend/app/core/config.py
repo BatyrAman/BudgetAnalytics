@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(default=15, ge=1, le=24 * 60)
     REFRESH_TOKEN_EXPIRE_DAYS: int = Field(default=14, ge=1, le=90)
+    # Стоимость bcrypt; в тестах понижается для скорости.
+    BCRYPT_ROUNDS: int = Field(default=12, ge=4, le=16)
 
     # Refresh-токен живёт в httpOnly-cookie.
     REFRESH_COOKIE_NAME: str = "refresh_token"

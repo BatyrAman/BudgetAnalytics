@@ -53,7 +53,9 @@ async def get_current_user(
         raise AuthenticationError()
 
     user = await UserRepository(db).get(user_id)
-    if user is None:
+    # token_version отзывает все access-токены после смены пароля
+    # или выхода со всех устройств.
+    if user is None or payload.get("ver", 0) != user.token_version:
         raise AuthenticationError()
 
     return user

@@ -23,3 +23,4 @@ os.environ["STARTUP_CHECKS"] = "false"
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 os.environ["REFRESH_COOKIE_SECURE"] = "false"
 os.environ.setdefault("LOG_LEVEL", "WARNING")
+os.environ["BCRYPT_ROUNDS"] = "4"

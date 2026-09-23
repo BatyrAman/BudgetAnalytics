@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -10,6 +10,8 @@ from app.models.types import MONEY
 
 class User(Base, TimestampMixin):
     __tablename__ = "users"
+    # Логин без учёта регистра email.
+    __table_args__ = (Index("ix_users_email_lower", func.lower(text("email"))),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
@@ -24,6 +26,10 @@ class User(Base, TimestampMixin):
     hashed_password: Mapped[str] = mapped_column(String(255))
 
     is_active: Mapped[bool] = mapped_column(default=True)
+
+    # Увеличивается при смене пароля / выходе со всех устройств:
+    # access-токены с прежней версией перестают приниматься сразу.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
     # --- финансовый профиль (для расчётов, не для LLM напрямую) ---
     monthly_income_declared: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)

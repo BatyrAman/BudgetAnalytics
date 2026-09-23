@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +18,7 @@ from app.models.enums import TransactionType
 from app.models.user import User
 from app.repositories.analytics import AnalyticsRepository, Scope
 from app.repositories.debts import DebtRepository
+from app.schemas.user import FinancialProfileUpdate
 from app.services.finance.calendar import add_months
 from app.services.finance.cashflow import monthly_average
 from app.services.finance.money import ZERO, quantize_money
@@ -65,6 +66,21 @@ class FinancialProfileService:
         self.analytics = AnalyticsRepository(session)
         self.debts = DebtRepository(session)
         self.today = today or date.today()
+
+    async def update(self, user: User, payload: FinancialProfileUpdate) -> User:
+        updates = payload.model_dump(exclude_unset=True)
+        consent = updates.pop("consent", None)
+        for field, value in updates.items():
+            if field == "dependents" and value is None:
+                continue
+            setattr(user, field, value)
+        if consent is True and user.consent_at is None:
+            user.consent_at = datetime.now(timezone.utc)
+        elif consent is False:
+            user.consent_at = None
+        await self.session.commit()
+        await self.session.refresh(user)
+        return user
 
     async def build(self, user: User) -> FinancialProfile:
         date_from, date_to = _window(self.today)
