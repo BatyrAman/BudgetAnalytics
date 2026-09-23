@@ -1,22 +1,16 @@
 from datetime import datetime
 from decimal import Decimal
-from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.enums import CategorySource, TransactionType
+from app.schemas.common import MoneyDecimal, PositiveMoney
 
-class TransactionType(str, Enum):
-    income = "income"
-    expense = "expense"
+__all__ = ["TransactionType"]
 
 
 class TransactionBase(BaseModel):
-    amount: Decimal = Field(
-        ...,
-        gt=0,
-        decimal_places=2,
-        description="Transaction amount"
-    )
+    amount: PositiveMoney = Field(description="Transaction amount (always positive)")
 
     description: str | None = Field(
         default=None,
@@ -33,15 +27,13 @@ class TransactionBase(BaseModel):
 
 
 class TransactionCreate(TransactionBase):
-    pass
+    card_id: int | None = None
+    merchant: str | None = Field(default=None, max_length=255)
+    is_recurring: bool = False
 
 
 class TransactionUpdate(BaseModel):
-    amount: Decimal | None = Field(
-        default=None,
-        gt=0,
-        decimal_places=2
-    )
+    amount: PositiveMoney | None = None
 
     description: str | None = Field(
         default=None,
@@ -56,14 +48,28 @@ class TransactionUpdate(BaseModel):
 
     bank_id: int | None = None
 
+    card_id: int | None = None
 
-class TransactionResponse(TransactionBase):
+    merchant: str | None = Field(default=None, max_length=255)
+
+    is_recurring: bool | None = None
+
+
+class TransactionResponse(BaseModel):
     id: int
-
+    amount: MoneyDecimal
+    currency: str
+    description: str | None
+    merchant: str | None
+    transaction_type: TransactionType
+    transaction_date: datetime
+    category_id: int | None
+    category_source: CategorySource | None
+    bank_id: int
+    card_id: int | None
+    is_recurring: bool
     user_id: int
-
     created_at: datetime
-
     updated_at: datetime
 
     model_config = ConfigDict(
@@ -83,61 +89,31 @@ class TransactionListResponse(BaseModel):
     total: int
 
 
-class TransactionFilter(BaseModel):
-    start_date: datetime | None = None
-
-    end_date: datetime | None = None
-
-    category_id: int | None = None
-
-    bank_id: int | None = None
-
-    transaction_type: TransactionType | None = None
-
-    min_amount: Decimal | None = None
-
-    max_amount: Decimal | None = None
-
-
 class MonthlyTransactionSummary(BaseModel):
-    income: Decimal
+    income: MoneyDecimal
 
-    expense: Decimal
+    expense: MoneyDecimal
 
-    balance: Decimal
+    balance: MoneyDecimal
 
 
 class TransactionStatistics(BaseModel):
     total_transactions: int
 
-    total_income: Decimal
+    total_income: MoneyDecimal
 
-    total_expense: Decimal
+    total_expense: MoneyDecimal
 
-    current_balance: Decimal
+    current_balance: MoneyDecimal
 
-    average_expense: Decimal
+    average_expense: MoneyDecimal
 
-    average_income: Decimal
+    average_income: MoneyDecimal
 
 
 class TransactionChartItem(BaseModel):
     label: str
 
-    income: Decimal
+    income: MoneyDecimal
 
-    expense: Decimal
-
-
-class ImportTransaction(BaseModel):
-    amount: Decimal
-
-    description: str | None = None
-
-    transaction_type: TransactionType
-
-    transaction_date: datetime
-
-    category_name: str | None = None
-
-    bank_name: str | None = None
+    expense: MoneyDecimal

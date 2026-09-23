@@ -3,14 +3,11 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.common import MoneyDecimal, PercentDecimal, PositiveMoney
+
 
 class DepositBase(BaseModel):
-    amount: Decimal = Field(
-        ...,
-        gt=0,
-        decimal_places=2,
-        description="Deposit amount"
-    )
+    amount: PositiveMoney = Field(description="Deposit amount")
 
     interest_rate: Decimal = Field(
         ...,
@@ -32,11 +29,7 @@ class DepositCreate(DepositBase):
 
 
 class DepositUpdate(BaseModel):
-    amount: Decimal | None = Field(
-        default=None,
-        gt=0,
-        decimal_places=2
-    )
+    amount: PositiveMoney | None = None
 
     interest_rate: Decimal | None = Field(
         default=None,
@@ -52,8 +45,18 @@ class DepositUpdate(BaseModel):
     bank_id: int | None = None
 
 
-class DepositResponse(DepositBase):
+class DepositResponse(BaseModel):
     id: int
+
+    amount: MoneyDecimal
+
+    interest_rate: PercentDecimal
+
+    start_date: date
+
+    end_date: date
+
+    bank_id: int
 
     user_id: int
 
@@ -71,9 +74,9 @@ class DepositDetail(DepositResponse):
 
     duration_days: int
 
-    expected_profit: Decimal
+    expected_profit: MoneyDecimal
 
-    expected_amount: Decimal
+    expected_amount: MoneyDecimal
 
     is_active: bool
 
@@ -87,11 +90,11 @@ class DepositListResponse(BaseModel):
 class DepositStatistics(BaseModel):
     total_deposits: int
 
-    total_amount: Decimal
+    total_amount: MoneyDecimal
 
-    total_expected_profit: Decimal
+    total_expected_profit: MoneyDecimal
 
-    total_expected_value: Decimal
+    total_expected_value: MoneyDecimal
 
 
 class DepositForecast(BaseModel):
@@ -99,12 +102,12 @@ class DepositForecast(BaseModel):
 
     maturity_date: date
 
-    expected_profit: Decimal
+    expected_profit: MoneyDecimal
 
-    expected_amount: Decimal
+    expected_amount: MoneyDecimal
 
 
 class DepositChartItem(BaseModel):
     label: str
 
-    amount: Decimal
+    amount: MoneyDecimal

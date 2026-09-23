@@ -1,20 +1,25 @@
 from __future__ import annotations
 
-from fastapi import Depends, HTTPException, Query, status
+from typing import Annotated
+
+from fastapi import Depends, Query
 from fastapi.security import OAuth2PasswordBearer
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.errors import AuthenticationError, PermissionDeniedError
 from app.core.security import TokenError, decode_token
 from app.models.user import User
+from app.repositories.users import UserRepository
 
 __all__ = [
     "get_db",
     "get_current_user",
     "get_current_active_user",
     "PaginationParams",
+    "DbSession",
+    "CurrentUser",
 ]
 
 oauth2_scheme = OAuth2PasswordBearer(
@@ -30,40 +35,26 @@ async def get_current_user(
     """
     Достаёт пользователя из access-токена.
 
-    Бросает 401, если токен отсутствует, просрочен, повреждён
+    401, если токен отсутствует, просрочен, повреждён
     либо пользователь по нему не найден.
     """
 
-    credentials_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-
     if token is None:
-        raise credentials_error
+        raise AuthenticationError()
 
     try:
         payload = decode_token(token, expected_type="access")
     except TokenError:
-        raise credentials_error
-
-    user_id = payload.get("sub")
-
-    if user_id is None:
-        raise credentials_error
+        raise AuthenticationError()
 
     try:
-        user_id = int(user_id)
+        user_id = int(payload.get("sub"))
     except (TypeError, ValueError):
-        raise credentials_error
+        raise AuthenticationError()
 
-    user = await db.scalar(
-        select(User).where(User.id == user_id)
-    )
-
+    user = await UserRepository(db).get(user_id)
     if user is None:
-        raise credentials_error
+        raise AuthenticationError()
 
     return user
 
@@ -73,12 +64,13 @@ async def get_current_active_user(
 ) -> User:
 
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user",
-        )
+        raise PermissionDeniedError("Inactive user", code="INACTIVE_USER")
 
     return current_user
+
+
+DbSession = Annotated[AsyncSession, Depends(get_db)]
+CurrentUser = Annotated[User, Depends(get_current_active_user)]
 
 
 class PaginationParams:
@@ -96,3 +88,6 @@ class PaginationParams:
     ):
         self.limit = limit
         self.offset = offset
+
+
+Pagination = Annotated[PaginationParams, Depends()]

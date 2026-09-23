@@ -1,62 +1,62 @@
-from decimal import Decimal
-
 from pydantic import BaseModel
+
+from app.schemas.common import MoneyDecimal
 
 
 class IncomeExpenseTrend(BaseModel):
     period: str
-    income: Decimal
-    expense: Decimal
+    income: MoneyDecimal
+    expense: MoneyDecimal
 
 
 class CategoryAnalytics(BaseModel):
     category: str
-    amount: Decimal
+    amount: MoneyDecimal
     transaction_count: int
     percentage: float
 
 
 class CashFlowAnalytics(BaseModel):
-    total_income: Decimal
-    total_expense: Decimal
-    net_cash_flow: Decimal
+    total_income: MoneyDecimal
+    total_expense: MoneyDecimal
+    net_cash_flow: MoneyDecimal
     savings_rate: float
 
 
 class MonthlyComparison(BaseModel):
-    current_month_income: Decimal
-    previous_month_income: Decimal
+    current_month_income: MoneyDecimal
+    previous_month_income: MoneyDecimal
 
-    current_month_expense: Decimal
-    previous_month_expense: Decimal
+    current_month_expense: MoneyDecimal
+    previous_month_expense: MoneyDecimal
 
     income_growth_percent: float
     expense_growth_percent: float
 
 
 class SpendingForecast(BaseModel):
-    next_month_expense: Decimal
-    predicted_savings: Decimal
+    next_month_expense: MoneyDecimal
+    predicted_savings: MoneyDecimal
     confidence: float
 
 
 class SavingsAnalytics(BaseModel):
-    current_savings: Decimal
-    target_savings: Decimal
+    current_savings: MoneyDecimal
+    target_savings: MoneyDecimal
     progress: float
-    remaining: Decimal
+    remaining: MoneyDecimal
 
 
 class InvestmentAnalytics(BaseModel):
-    invested_amount: Decimal
-    expected_profit: Decimal
-    expected_value: Decimal
+    invested_amount: MoneyDecimal
+    expected_profit: MoneyDecimal
+    expected_value: MoneyDecimal
 
 
 class BankAnalytics(BaseModel):
     bank_name: str
-    income: Decimal
-    expense: Decimal
+    income: MoneyDecimal
+    expense: MoneyDecimal
     transaction_count: int
 
 

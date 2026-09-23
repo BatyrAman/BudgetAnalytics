@@ -5,6 +5,8 @@ from app.models.base import Base
 
 
 class Bank(Base):
+    """Справочник банков — общий для всех пользователей (не персональные данные)."""
+
     __tablename__ = "banks"
 
     id: Mapped[int] = mapped_column(primary_key=True)

@@ -1,7 +1,8 @@
 from datetime import datetime
-from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.common import MoneyDecimal, NonNegativeMoney, PositiveMoney
 
 
 class BudgetBase(BaseModel):
@@ -12,16 +13,13 @@ class BudgetBase(BaseModel):
         description="Budget name"
     )
 
-    monthly_limit: Decimal = Field(
-        ...,
-        gt=0,
-        decimal_places=2,
-        description="Monthly budget limit"
-    )
+    monthly_limit: PositiveMoney = Field(description="Monthly budget limit")
 
 
 class BudgetCreate(BudgetBase):
-    pass
+    # Если указана категория, spent считается по расходам категории
+    # за текущий месяц автоматически.
+    category_id: int | None = None
 
 
 class BudgetUpdate(BaseModel):
@@ -31,23 +29,27 @@ class BudgetUpdate(BaseModel):
         max_length=100
     )
 
-    monthly_limit: Decimal | None = Field(
-        default=None,
-        gt=0,
-        decimal_places=2
-    )
+    monthly_limit: PositiveMoney | None = None
 
-    spent: Decimal | None = Field(
-        default=None,
-        ge=0,
-        decimal_places=2
-    )
+    # Ручной учёт — только для бюджетов без категории.
+    spent: NonNegativeMoney | None = None
+
+    category_id: int | None = None
 
 
-class BudgetResponse(BudgetBase):
+class BudgetResponse(BaseModel):
     id: int
 
-    spent: Decimal
+    title: str
+
+    monthly_limit: MoneyDecimal
+
+    spent: MoneyDecimal
+
+    category_id: int | None = None
+
+    # "transactions" — посчитано по операциям месяца, "manual" — введено вручную.
+    spent_source: str = "manual"
 
     user_id: int
 
@@ -61,7 +63,7 @@ class BudgetResponse(BudgetBase):
 
 
 class BudgetDetail(BudgetResponse):
-    remaining: Decimal
+    remaining: MoneyDecimal
 
     progress: float
 
@@ -75,11 +77,11 @@ class BudgetListResponse(BaseModel):
 
 
 class BudgetStatistics(BaseModel):
-    total_budget: Decimal
+    total_budget: MoneyDecimal
 
-    total_spent: Decimal
+    total_spent: MoneyDecimal
 
-    remaining: Decimal
+    remaining: MoneyDecimal
 
     utilization_percent: float
 
@@ -89,11 +91,11 @@ class BudgetProgress(BaseModel):
 
     title: str
 
-    monthly_limit: Decimal
+    monthly_limit: MoneyDecimal
 
-    spent: Decimal
+    spent: MoneyDecimal
 
-    remaining: Decimal
+    remaining: MoneyDecimal
 
     progress: float
 
@@ -101,9 +103,9 @@ class BudgetProgress(BaseModel):
 class BudgetAlert(BaseModel):
     title: str
 
-    spent: Decimal
+    spent: MoneyDecimal
 
-    monthly_limit: Decimal
+    monthly_limit: MoneyDecimal
 
     progress: float
 

@@ -1,7 +1,11 @@
-from sqlalchemy import String
+from datetime import datetime
+from decimal import Decimal
+
+from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+from app.models.types import MONEY
 
 
 class User(Base, TimestampMixin):
@@ -21,20 +25,13 @@ class User(Base, TimestampMixin):
 
     is_active: Mapped[bool] = mapped_column(default=True)
 
-    transactions = relationship(
-        "Transaction",
-        back_populates="user",
-        cascade="all, delete"
-    )
+    # --- финансовый профиль (для расчётов, не для LLM напрямую) ---
+    monthly_income_declared: Mapped[Decimal | None] = mapped_column(MONEY, nullable=True)
+    dependents: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    consent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    budgets = relationship(
-        "Budget",
-        back_populates="user",
-        cascade="all, delete"
-    )
-
-    deposits = relationship(
-        "Deposit",
-        back_populates="user",
-        cascade="all, delete"
-    )
+    # Каскад удаления обеспечивают FK ON DELETE CASCADE в БД.
+    transactions = relationship("Transaction", back_populates="user", passive_deletes=True)
+    budgets = relationship("Budget", back_populates="user", passive_deletes=True)
+    deposits = relationship("Deposit", back_populates="user", passive_deletes=True)

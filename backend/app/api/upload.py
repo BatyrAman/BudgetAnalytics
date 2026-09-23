@@ -1,198 +1,100 @@
 from __future__ import annotations
 
-import tempfile
-from decimal import Decimal
-from pathlib import Path
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
-from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from app.api.deps import CurrentUser, DbSession, Pagination
+from app.core.config import settings
+from app.core.errors import ERROR_RESPONSES, AppError
+from app.core.rate_limit import rate_limit
+from app.schemas.bank import BankListResponse, SupportedBank
+from app.schemas.imports import StatementImportResponse, UploadResult
+from app.services.imports.service import StatementImportService
+from app.services.parser import PARSERS
 
-from app.api.deps import get_current_active_user, get_db
-from app.models.bank import Bank
-from app.models.category import Category
-from app.models.enums import TransactionType
-from app.models.transaction import Transaction
-from app.models.user import User
-from app.schemas.bank import (
-    BankListResponse,
-    BankResponse,
-    SupportedBank,
-)
-from app.schemas.transaction import ImportTransaction
-from app.services.parser.freedom import FreedomParser
-from app.services.parser.halyk import HalykParser
-from app.services.parser.kaspi import KaspiParser
+router = APIRouter(tags=["Upload"], responses=ERROR_RESPONSES)
 
-router = APIRouter(prefix="/upload", tags=["Upload"])
+_CHUNK = 64 * 1024
 
 
-_PARSERS = {
-    "kaspi": KaspiParser,
-    "halyk": HalykParser,
-    "freedom": FreedomParser,
-}
+async def _read_limited(file: UploadFile) -> bytes:
+    limit = settings.max_upload_size_bytes
+    data = bytearray()
+    while chunk := await file.read(_CHUNK):
+        data.extend(chunk)
+        if len(data) > limit:
+            raise AppError(
+                f"File is larger than {settings.MAX_UPLOAD_SIZE_MB} MB",
+                code="FILE_TOO_LARGE",
+                status_code=413,
+            )
+    return bytes(data)
 
 
-@router.get(
-    "/banks/supported",
-    response_model=list[SupportedBank],
-)
+@router.get("/upload/banks/supported", response_model=list[SupportedBank])
 async def get_supported_banks() -> list[SupportedBank]:
-    """
-    Список банков, для которых реализован парсер CSV-выписок.
-    """
+    """Банки, для которых реализован парсер выписок."""
 
     return [
-        SupportedBank(name=parser_cls.BANK_NAME, parser=slug, supported=True)
-        for slug, parser_cls in _PARSERS.items()
+        SupportedBank(name=parser.bank_name, parser=slug, supported=True)
+        for slug, parser in PARSERS.items()
     ]
 
 
-@router.get(
-    "/banks",
-    response_model=BankListResponse,
-)
-async def list_banks(
-    db: AsyncSession = Depends(get_db),
-    _current_user: User = Depends(get_current_active_user),
-) -> BankListResponse:
-    """
-    Справочник банков (общий для всех пользователей).
-    """
+@router.get("/upload/banks", response_model=BankListResponse)
+async def list_banks(_: CurrentUser, db: DbSession) -> BankListResponse:
+    """Справочник банков (общий для всех пользователей)."""
 
-    total = await db.scalar(select(func.count(Bank.id)))
-    result = await db.execute(select(Bank).order_by(Bank.name))
-
-    return BankListResponse(items=result.scalars().all(), total=total or 0)
-
-
-async def _get_or_create_bank(db: AsyncSession, name: str) -> Bank:
-
-    bank = await db.scalar(select(Bank).where(Bank.name == name))
-
-    if bank is not None:
-        return bank
-
-    bank = Bank(name=name)
-    db.add(bank)
-    await db.flush()
-
-    return bank
-
-
-async def _get_or_create_category(db: AsyncSession, name: str) -> Category:
-
-    category = await db.scalar(select(Category).where(Category.name == name))
-
-    if category is not None:
-        return category
-
-    category = Category(name=name)
-    db.add(category)
-    await db.flush()
-
-    return category
+    items = await StatementImportService(db).list_banks()
+    return BankListResponse(items=items, total=len(items))
 
 
 @router.post(
-    "/{bank_slug}",
+    "/upload/{bank_slug}",
+    response_model=UploadResult,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("upload", "UPLOAD_RATE_LIMIT_PER_MINUTE"))],
 )
 async def upload_statement(
     bank_slug: str,
-    file: UploadFile,
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> dict:
+    user: CurrentUser,
+    db: DbSession,
+    file: UploadFile = File(...),
+    card_id: int | None = Query(default=None, description="Карта, к которой относится выписка"),
+) -> UploadResult:
     """
-    Загружает CSV-выписку выбранного банка и импортирует транзакции
-    текущего пользователя.
+    Импорт CSV-выписки банка: kaspi, halyk, freedom.
 
-    `bank_slug` — один из поддерживаемых парсеров: kaspi, halyk, freedom.
+    Повторная загрузка той же выписки не создаёт дублей
+    (`skipped_duplicates`). Строки, которые не удалось разобрать,
+    перечислены в `errors`; статус тогда `partial`.
     """
 
-    parser_cls = _PARSERS.get(bank_slug.lower())
+    content = await _read_limited(file)
+    outcome = await StatementImportService(db).import_statement(
+        user, bank_slug, file.filename or "", content, card_id
+    )
+    record = outcome.record
+    message = "No transactions found in the file" if record.rows_total == 0 else None
+    return UploadResult(
+        import_id=record.id,
+        status=record.status,
+        bank=outcome.bank_name,
+        imported=record.rows_imported,
+        skipped_duplicates=record.rows_skipped,
+        failed=record.rows_failed,
+        rows_total=record.rows_total,
+        total_income=outcome.total_income,
+        total_expense=outcome.total_expense,
+        errors=record.errors,
+        message=message,
+    )
 
-    if parser_cls is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
-                f"Unsupported bank '{bank_slug}'. "
-                f"Supported: {', '.join(_PARSERS)}"
-            ),
-        )
 
-    if not (file.filename or "").lower().endswith(".csv"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only .csv files are supported",
-        )
+@router.get("/imports", response_model=list[StatementImportResponse], tags=["Imports"])
+async def list_imports(user: CurrentUser, db: DbSession, pagination: Pagination):
+    return await StatementImportService(db).list_imports(user.id, pagination.limit, pagination.offset)
 
-    parser = parser_cls()
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".csv", delete=False
-    ) as tmp_file:
-        content = await file.read()
-        tmp_file.write(content)
-        tmp_path = Path(tmp_file.name)
-
-    try:
-        try:
-            parsed_rows: list[ImportTransaction] = await parser.parse(tmp_path)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-            )
-    finally:
-        tmp_path.unlink(missing_ok=True)
-
-    if not parsed_rows:
-        return {
-            "imported": 0,
-            "total_income": "0",
-            "total_expense": "0",
-            "message": "No transactions found in the file",
-        }
-
-    bank = await _get_or_create_bank(db, parser_cls.BANK_NAME)
-
-    total_income = Decimal("0")
-    total_expense = Decimal("0")
-    imported = 0
-
-    for row in parsed_rows:
-        category = await _get_or_create_category(
-            db, row.category_name or "Без категории"
-        )
-
-        transaction_type = TransactionType(row.transaction_type.value)
-
-        transaction = Transaction(
-            amount=row.amount,
-            description=row.description,
-            transaction_type=transaction_type,
-            transaction_date=row.transaction_date,
-            category_id=category.id,
-            bank_id=bank.id,
-            user_id=current_user.id,
-        )
-
-        db.add(transaction)
-        imported += 1
-
-        if transaction_type == TransactionType.INCOME:
-            total_income += row.amount
-        else:
-            total_expense += row.amount
-
-    await db.commit()
-
-    return {
-        "imported": imported,
-        "bank": bank.name,
-        "total_income": str(total_income),
-        "total_expense": str(total_expense),
-    }
+@router.get("/imports/{import_id}", response_model=StatementImportResponse, tags=["Imports"])
+async def get_import(import_id: int, user: CurrentUser, db: DbSession):
+    return await StatementImportService(db).get_import(import_id, user.id)

@@ -1,32 +1,34 @@
-from decimal import Decimal
-
 from pydantic import BaseModel
+
+from app.schemas.common import MoneyDecimal, PercentDecimal
 
 
 class BalanceCard(BaseModel):
-    total_balance: Decimal
-    total_income: Decimal
-    total_expense: Decimal
-    total_savings: Decimal
+    # Внимание: это «доходы минус расходы за всё время» по загруженным
+    # операциям, а не остаток на счёте (выписки могут быть неполными).
+    total_balance: MoneyDecimal
+    total_income: MoneyDecimal
+    total_expense: MoneyDecimal
+    total_savings: MoneyDecimal
 
 
 class MonthlySummary(BaseModel):
     month: str
-    income: Decimal
-    expense: Decimal
-    balance: Decimal
+    income: MoneyDecimal
+    expense: MoneyDecimal
+    balance: MoneyDecimal
 
 
 class ExpenseCategory(BaseModel):
     category: str
-    amount: Decimal
+    amount: MoneyDecimal
     percentage: float
 
 
 class RecentTransaction(BaseModel):
     id: int
     description: str | None
-    amount: Decimal
+    amount: MoneyDecimal
     transaction_type: str
     category: str
     bank: str
@@ -35,17 +37,17 @@ class RecentTransaction(BaseModel):
 
 class BudgetOverview(BaseModel):
     budget_name: str
-    monthly_limit: Decimal
-    spent: Decimal
-    remaining: Decimal
+    monthly_limit: MoneyDecimal
+    spent: MoneyDecimal
+    remaining: MoneyDecimal
     progress: float
 
 
 class DepositOverview(BaseModel):
     bank_name: str
-    amount: Decimal
-    interest_rate: Decimal
-    expected_profit: Decimal
+    amount: MoneyDecimal
+    interest_rate: PercentDecimal
+    expected_profit: MoneyDecimal
     maturity_date: str
 
 

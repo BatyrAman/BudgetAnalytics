@@ -1,6 +1,6 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.models.enums import CategoryKind
 
 
 class CategoryBase(BaseModel):
@@ -25,7 +25,7 @@ class CategoryBase(BaseModel):
 
 
 class CategoryCreate(CategoryBase):
-    pass
+    kind: CategoryKind = CategoryKind.EXPENSE
 
 
 class CategoryUpdate(BaseModel):
@@ -48,39 +48,9 @@ class CategoryUpdate(BaseModel):
 
 class CategoryResponse(CategoryBase):
     id: int
+    kind: CategoryKind
+    is_system: bool
 
     model_config = ConfigDict(
         from_attributes=True
     )
-
-
-class CategoryDetail(CategoryResponse):
-    transaction_count: int = 0
-
-    total_amount: float = 0.0
-
-
-class CategoryListResponse(BaseModel):
-    items: list[CategoryResponse]
-
-    total: int
-
-
-class CategoryStatistics(BaseModel):
-    category_id: int
-
-    category_name: str
-
-    total_income: float
-
-    total_expense: float
-
-    transaction_count: int
-
-
-class TopCategory(BaseModel):
-    name: str
-
-    amount: float
-
-    percentage: float

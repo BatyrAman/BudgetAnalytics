@@ -5,6 +5,7 @@ from sqlalchemy import Date, ForeignKey, Numeric
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
+from app.models.types import MONEY
 
 
 class Deposit(Base, TimestampMixin):
@@ -12,9 +13,7 @@ class Deposit(Base, TimestampMixin):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    amount: Mapped[Decimal] = mapped_column(
-        Numeric(12, 2)
-    )
+    amount: Mapped[Decimal] = mapped_column(MONEY)
 
     interest_rate: Mapped[Decimal] = mapped_column(
         Numeric(5, 2)
@@ -25,7 +24,8 @@ class Deposit(Base, TimestampMixin):
     end_date: Mapped[date] = mapped_column(Date)
 
     user_id: Mapped[int] = mapped_column(
-        ForeignKey("users.id")
+        ForeignKey("users.id", ondelete="CASCADE"),
+        index=True,
     )
 
     bank_id: Mapped[int] = mapped_column(
