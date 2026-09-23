@@ -2,8 +2,8 @@ from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
 
+import bcrypt
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.core.config import settings
 
@@ -12,24 +12,28 @@ class TokenError(Exception):
     """Токен невалиден, просрочен или имеет неверный тип."""
 
 
-pwd_context = CryptContext(
-    schemes=["bcrypt"],
-    deprecated="auto"
-)
+# bcrypt учитывает только первые 72 байта пароля; длиннее —
+# отклоняем на уровне схем (см. schemas/auth.py).
+BCRYPT_MAX_BYTES = 72
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    # passlib 1.7 несовместим с bcrypt>=4.1 (падает на detect_wrap_bug),
+    # поэтому используем bcrypt напрямую. Формат хеша прежний ($2b$).
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("ascii")
 
 
 def verify_password(
     plain_password: str,
     hashed_password: str
 ) -> bool:
-    return pwd_context.verify(
-        plain_password,
-        hashed_password
-    )
+    secret = plain_password.encode("utf-8")
+    if len(secret) > BCRYPT_MAX_BYTES:
+        return False
+    try:
+        return bcrypt.checkpw(secret, hashed_password.encode("ascii"))
+    except ValueError:
+        return False
 
 
 def create_access_token(
