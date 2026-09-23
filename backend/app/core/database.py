@@ -1,38 +1,53 @@
+"""
+Подключение к БД.
+
+Declarative Base живёт в app.models.base (единственный на проект).
+Схема создаётся только миграциями Alembic — никакого create_all.
+
+Управление транзакциями: сессия на запрос. Репозитории делают
+только flush; commit выполняет application-сервис в конце
+use-case. При исключении сессия откатывается здесь.
+"""
+
+from __future__ import annotations
+
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
     AsyncSession,
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from app.core.config import settings
 
 
-engine = create_async_engine(
-    settings.DATABASE_URL,
-    echo=settings.DEBUG,
-    pool_pre_ping=True,
-)
+def build_engine(url: str | None = None, **kwargs) -> AsyncEngine:
+    options = {
+        "echo": settings.DB_ECHO,
+        "pool_pre_ping": True,
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+    }
+    options.update(kwargs)
+    return create_async_engine(url or settings.DATABASE_URL, **options)
+
+
+engine = build_engine()
 
 SessionLocal = async_sessionmaker(
     bind=engine,
     class_=AsyncSession,
     autoflush=False,
-    autocommit=False,
     expire_on_commit=False,
 )
 
 
-class Base(DeclarativeBase):
-    pass
-
-
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
-
-    async with SessionLocal() as db:
+    async with SessionLocal() as session:
         try:
-            yield db
-        finally:
-            await db.close()
+            yield session
+        except BaseException:
+            await session.rollback()
+            raise
