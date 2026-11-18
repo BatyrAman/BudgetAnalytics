@@ -26,8 +26,12 @@ from app.schemas.dashboard import (
 from app.services.analytics.income import IncomeAnalyticsService
 from app.services.analytics.saving import SavingAnalyticsService
 from app.services.analytics.spending import SpendingAnalyticsService
+from app.services.budgets import budget_progress_percent
+from app.services.deposits import expected_profit
 
-router = APIRouter(prefix="/dashboard", tags=["Dashboard"])
+# DEPRECATED legacy dashboard (all-time "balance" = income − expenses, default
+# currency only). Superseded by GET /dashboard/overview (app/api/overview.py).
+router = APIRouter(prefix="/dashboard", tags=["Dashboard (deprecated)"], deprecated=True)
 
 
 @router.get(
@@ -45,9 +49,9 @@ async def get_dashboard(
 
     user_id = current_user.id
 
-    income_service = IncomeAnalyticsService(db)
-    spending_service = SpendingAnalyticsService(db)
-    saving_service = SavingAnalyticsService(db)
+    income_service = IncomeAnalyticsService(db, current_user.default_currency_code)
+    spending_service = SpendingAnalyticsService(db, current_user.default_currency_code)
+    saving_service = SavingAnalyticsService(db, current_user.default_currency_code)
 
     total_income = await income_service.get_total_income(user_id)
     total_expense = await spending_service.get_total_expenses(user_id)
@@ -62,12 +66,8 @@ async def get_dashboard(
 
     today = date.today()
 
-    month_income = await income_service.get_monthly_income(
-        user_id, today.year, today.month
-    )
-    month_expense = await spending_service.get_monthly_expenses(
-        user_id, today.year, today.month
-    )
+    month_income = await income_service.get_monthly_income(user_id, today.year, today.month)
+    month_expense = await spending_service.get_monthly_expenses(user_id, today.year, today.month)
 
     monthly_summary = MonthlySummary(
         month=f"{today.year}-{today.month:02d}",
@@ -78,7 +78,10 @@ async def get_dashboard(
 
     tx_result = await db.execute(
         select(Transaction)
-        .where(Transaction.user_id == user_id)
+        .where(
+            Transaction.user_id == user_id,
+            Transaction.currency_code == current_user.default_currency_code,
+        )
         .order_by(Transaction.transaction_date.desc())
         .limit(10)
     )
@@ -114,36 +117,24 @@ async def get_dashboard(
         for name, total in top_categories_raw
     ]
 
-    budgets_result = await db.execute(
-        select(Budget).where(Budget.user_id == user_id)
-    )
+    budgets_result = await db.execute(select(Budget).where(Budget.user_id == user_id))
     budgets_overview = [
         BudgetOverview(
             budget_name=b.title,
             monthly_limit=b.monthly_limit,
             spent=b.spent,
             remaining=b.monthly_limit - b.spent,
-            progress=(
-                float(round((b.spent / b.monthly_limit) * 100, 2))
-                if b.monthly_limit > 0
-                else 0.0
-            ),
+            progress=budget_progress_percent(b.spent, b.monthly_limit),
         )
         for b in budgets_result.scalars().all()
     ]
 
-    deposits_result = await db.execute(
-        select(Deposit).where(Deposit.user_id == user_id)
-    )
+    deposits_result = await db.execute(select(Deposit).where(Deposit.user_id == user_id))
     deposits_overview: list[DepositOverview] = []
     for d in deposits_result.scalars().all():
         bank = await db.get(Bank, d.bank_id)
 
-        duration_days = max((d.end_date - d.start_date).days, 0)
-        profit = (
-            d.amount * (d.interest_rate / Decimal("100"))
-            * Decimal(duration_days) / Decimal("365")
-        ).quantize(Decimal("0.01"))
+        profit = expected_profit(d)
 
         deposits_overview.append(
             DepositOverview(

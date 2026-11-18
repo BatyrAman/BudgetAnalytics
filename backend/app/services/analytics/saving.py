@@ -16,11 +16,13 @@ class SavingAnalyticsService:
         (Доход - Расход) / Доход * 100%
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, currency_code: str = "KZT"):
+        # LEGACY: only rows in this currency are aggregated (never mixed).
         self.db = db
+        self.currency_code = currency_code
 
-        self.income_service = IncomeAnalyticsService(db)
-        self.spending_service = SpendingAnalyticsService(db)
+        self.income_service = IncomeAnalyticsService(db, currency_code)
+        self.spending_service = SpendingAnalyticsService(db, currency_code)
 
     async def get_balance(
         self,

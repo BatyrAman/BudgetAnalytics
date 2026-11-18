@@ -1,21 +1,10 @@
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class BankBase(BaseModel):
-    name: str = Field(
-        ...,
-        min_length=2,
-        max_length=100,
-        description="Bank name"
-    )
+    name: str = Field(..., min_length=2, max_length=100, description="Bank name")
 
-    logo: str | None = Field(
-        default=None,
-        max_length=255,
-        description="Bank logo URL"
-    )
+    logo: str | None = Field(default=None, max_length=255, description="Bank logo URL")
 
 
 class BankCreate(BankBase):
@@ -23,24 +12,15 @@ class BankCreate(BankBase):
 
 
 class BankUpdate(BaseModel):
-    name: str | None = Field(
-        default=None,
-        min_length=2,
-        max_length=100
-    )
+    name: str | None = Field(default=None, min_length=2, max_length=100)
 
-    logo: str | None = Field(
-        default=None,
-        max_length=255
-    )
+    logo: str | None = Field(default=None, max_length=255)
 
 
 class BankResponse(BankBase):
     id: int
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BankDetail(BankResponse):

@@ -24,8 +24,10 @@ class ForecastingService:
         - LSTM
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, currency_code: str = "KZT"):
+        # LEGACY: only rows in this currency are aggregated (never mixed).
         self.db = db
+        self.currency_code = currency_code
 
     async def _monthly_average(
         self,
@@ -44,6 +46,7 @@ class ForecastingService:
             )
             .where(
                 Transaction.user_id == user_id,
+                Transaction.currency_code == self.currency_code,
                 Transaction.transaction_type == transaction_type,
             )
             .group_by(

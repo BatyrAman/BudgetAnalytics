@@ -1,0 +1,58 @@
+# Local development stack. Usage (from backend/):
+#   cp .env.example .env          # then set POSTGRES_PASSWORD and SECRET_KEY
+#   docker compose up -d db       # only Postgres (run the API on the host)
+#   docker compose up --build     # Postgres + migrations + API
+#
+# Redis is intentionally not included: no background jobs, caching or rate
+# limiting that would need it are implemented yet.
+
+name: budgetanalytics
+
+x-app-env: &app-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-budget}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-budget}
+  CORS_ORIGINS: ${CORS_ORIGINS:-[]}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  LOG_JSON: ${LOG_JSON:-true}
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-budget}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-budget}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      # host-only; not exposed on the network. Override POSTGRES_HOST_PORT in .env
+      # if 5432 is taken on the host (e.g. a native PostgreSQL on Windows).
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build: .
+    command: [ "alembic", "upgrade", "head" ]
+    environment: *app-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build: .
+    environment: *app-env
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -6,9 +6,9 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.transaction import Transaction
 from app.models.category import Category
 from app.models.enums import TransactionType
+from app.models.transaction import Transaction
 
 
 class SpendingAnalyticsService:
@@ -16,8 +16,10 @@ class SpendingAnalyticsService:
     Сервис аналитики расходов.
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, currency_code: str = "KZT"):
+        # LEGACY: only rows in this currency are aggregated (never mixed).
         self.db = db
+        self.currency_code = currency_code
 
     async def get_total_expenses(
         self,
@@ -27,17 +29,15 @@ class SpendingAnalyticsService:
         Общая сумма расходов пользователя.
         """
 
-        stmt = (
-            select(
-                func.coalesce(
-                    func.sum(Transaction.amount),
-                    0,
-                )
+        stmt = select(
+            func.coalesce(
+                func.sum(Transaction.amount),
+                0,
             )
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.EXPENSE,
-            )
+        ).where(
+            Transaction.user_id == user_id,
+            Transaction.currency_code == self.currency_code,
+            Transaction.transaction_type == TransactionType.EXPENSE,
         )
 
         result = await self.db.scalar(stmt)
@@ -54,19 +54,17 @@ class SpendingAnalyticsService:
         Расходы за выбранный месяц.
         """
 
-        stmt = (
-            select(
-                func.coalesce(
-                    func.sum(Transaction.amount),
-                    0,
-                )
+        stmt = select(
+            func.coalesce(
+                func.sum(Transaction.amount),
+                0,
             )
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.EXPENSE,
-                func.extract("year", Transaction.transaction_date) == year,
-                func.extract("month", Transaction.transaction_date) == month,
-            )
+        ).where(
+            Transaction.user_id == user_id,
+            Transaction.currency_code == self.currency_code,
+            Transaction.transaction_type == TransactionType.EXPENSE,
+            func.extract("year", Transaction.transaction_date) == year,
+            func.extract("month", Transaction.transaction_date) == month,
         )
 
         result = await self.db.scalar(stmt)
@@ -81,17 +79,15 @@ class SpendingAnalyticsService:
         Средний размер расходной операции.
         """
 
-        stmt = (
-            select(
-                func.coalesce(
-                    func.avg(Transaction.amount),
-                    0,
-                )
+        stmt = select(
+            func.coalesce(
+                func.avg(Transaction.amount),
+                0,
             )
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.EXPENSE,
-            )
+        ).where(
+            Transaction.user_id == user_id,
+            Transaction.currency_code == self.currency_code,
+            Transaction.transaction_type == TransactionType.EXPENSE,
         )
 
         result = await self.db.scalar(stmt)
@@ -106,12 +102,10 @@ class SpendingAnalyticsService:
         Количество расходных операций.
         """
 
-        stmt = (
-            select(func.count(Transaction.id))
-            .where(
-                Transaction.user_id == user_id,
-                Transaction.transaction_type == TransactionType.EXPENSE,
-            )
+        stmt = select(func.count(Transaction.id)).where(
+            Transaction.user_id == user_id,
+            Transaction.currency_code == self.currency_code,
+            Transaction.transaction_type == TransactionType.EXPENSE,
         )
 
         result = await self.db.scalar(stmt)
@@ -138,6 +132,7 @@ class SpendingAnalyticsService:
             )
             .where(
                 Transaction.user_id == user_id,
+                Transaction.currency_code == self.currency_code,
                 Transaction.transaction_type == TransactionType.EXPENSE,
             )
             .group_by(Category.name)

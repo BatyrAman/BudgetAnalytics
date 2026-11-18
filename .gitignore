@@ -1,1 +1,39 @@
-/.idea/
+# Secrets / local config
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling / test artifacts
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Production secret files (docker-compose.prod.yml)
+backend/secrets/
+# Database backups
+*.dump
+*.dump.age
+
+# Logs and local database backups (backend/backups/*.dump)
+*.log
+backups/

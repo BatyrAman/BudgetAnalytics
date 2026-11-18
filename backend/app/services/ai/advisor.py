@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import List
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.services.analytics.income import IncomeAnalyticsService
-from app.services.analytics.spending import SpendingAnalyticsService
-from app.services.analytics.saving import SavingAnalyticsService
 from app.services.analytics.forecasting import ForecastingService
+from app.services.analytics.income import IncomeAnalyticsService
+from app.services.analytics.saving import SavingAnalyticsService
+from app.services.analytics.spending import SpendingAnalyticsService
 
 
 class FinancialAdvisorService:
@@ -23,14 +21,14 @@ class FinancialAdvisorService:
         • Claude
     """
 
-    def __init__(self, db: AsyncSession):
+    def __init__(self, db: AsyncSession, currency_code: str = "KZT"):
 
         self.db = db
 
-        self.income = IncomeAnalyticsService(db)
-        self.spending = SpendingAnalyticsService(db)
-        self.saving = SavingAnalyticsService(db)
-        self.forecast = ForecastingService(db)
+        self.income = IncomeAnalyticsService(db, currency_code)
+        self.spending = SpendingAnalyticsService(db, currency_code)
+        self.saving = SavingAnalyticsService(db, currency_code)
+        self.forecast = ForecastingService(db, currency_code)
 
     async def generate_advice(
         self,
@@ -47,109 +45,70 @@ class FinancialAdvisorService:
 
         forecast = await self.forecast.full_forecast(user_id)
 
-        advice: List[str] = []
+        advice: list[str] = []
 
-        warnings: List[str] = []
+        warnings: list[str] = []
 
-        opportunities: List[str] = []
+        opportunities: list[str] = []
 
         # ------------------------
         # Income
         # ------------------------
 
         if income == 0:
-
-            warnings.append(
-                "У вас пока отсутствуют доходы."
-            )
+            warnings.append("У вас пока отсутствуют доходы.")
 
         # ------------------------
         # Expense
         # ------------------------
 
         if expense > income:
+            warnings.append("Расходы превышают доходы.")
 
-            warnings.append(
-                "Расходы превышают доходы."
-            )
-
-            advice.append(
-                "Необходимо сократить необязательные расходы."
-            )
+            advice.append("Необходимо сократить необязательные расходы.")
 
         # ------------------------
         # Saving Rate
         # ------------------------
 
         if saving_rate >= 40:
+            opportunities.append("Отличная финансовая дисциплина.")
 
-            opportunities.append(
-                "Отличная финансовая дисциплина."
-            )
-
-            advice.append(
-                "Можно начать инвестировать свободные средства."
-            )
+            advice.append("Можно начать инвестировать свободные средства.")
 
         elif saving_rate >= 20:
-
-            advice.append(
-                "Попробуйте увеличить накопления до 30–40%."
-            )
+            advice.append("Попробуйте увеличить накопления до 30–40%.")
 
         elif saving_rate >= 10:
-
-            advice.append(
-                "Стоит сократить ежедневные расходы."
-            )
+            advice.append("Стоит сократить ежедневные расходы.")
 
         else:
+            warnings.append("Очень низкий процент накоплений.")
 
-            warnings.append(
-                "Очень низкий процент накоплений."
-            )
-
-            advice.append(
-                "Создайте резервный фонд минимум на 3 месяца."
-            )
+            advice.append("Создайте резервный фонд минимум на 3 месяца.")
 
         # ------------------------
         # Balance
         # ------------------------
 
         if balance < 0:
-
-            warnings.append(
-                "Ваш баланс отрицательный."
-            )
+            warnings.append("Ваш баланс отрицательный.")
 
         elif balance > 300000:
-
-            opportunities.append(
-                "У вас достаточно свободных средств для инвестирования."
-            )
+            opportunities.append("У вас достаточно свободных средств для инвестирования.")
 
         # ------------------------
         # Forecast
         # ------------------------
 
         if forecast["risk"] == "CRITICAL":
-
-            warnings.append(
-                "Высокий риск дефицита бюджета в следующем месяце."
-            )
+            warnings.append("Высокий риск дефицита бюджета в следующем месяце.")
 
         elif forecast["risk"] == "HIGH":
-
-            advice.append(
-                "Следующий месяц может быть финансово напряженным."
-            )
+            advice.append("Следующий месяц может быть финансово напряженным.")
 
         elif forecast["risk"] == "LOW":
-
-            opportunities.append(
-                "Финансовый прогноз выглядит стабильно."
-            )
+            opportunities.append("Финансовый прогноз выглядит стабильно.")
 
         # ------------------------
         # Score
@@ -164,23 +123,14 @@ class FinancialAdvisorService:
         score = max(0, min(score, 100))
 
         return {
-
             "financial_score": score,
-
             "income": income,
-
             "expense": expense,
-
             "balance": balance,
-
             "saving_rate": saving_rate,
-
             "forecast": forecast,
-
             "warnings": warnings,
-
             "recommendations": advice,
-
             "opportunities": opportunities,
         }
 

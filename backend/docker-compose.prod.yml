@@ -1,0 +1,113 @@
+# Production-like stack (single host). See docs/DEPLOYMENT.md before use.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# * No service is published on a public interface: the API listens on
+#   127.0.0.1:8000 for a TLS-terminating reverse proxy on the host
+#   (Caddy/nginx); Postgres and Redis are reachable only inside the network.
+# * Secrets are FILES in ./secrets (chmod 600, never committed), mounted at
+#   /run/secrets and read by the app's settings (one file per setting).
+# * Containers run read-only, without Linux capabilities or privilege escalation.
+
+name: budgetanalytics-prod
+
+x-hardening: &hardening
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+x-app: &app
+  <<: *hardening
+  build: .
+  image: budgetanalytics-api:${APP_VERSION:-latest}
+  environment:
+    ENVIRONMENT: production
+    RATE_LIMIT_BACKEND: redis
+    LOG_JSON: "true"
+    LOG_LEVEL: INFO
+    CORS_ORIGINS: ${CORS_ORIGINS:?set CORS_ORIGINS, e.g. ["https://app.example.kz"]}
+    AI_PROVIDER: ${AI_PROVIDER:-none}
+    WEB_CONCURRENCY: ${WEB_CONCURRENCY:-2}
+    # The reverse proxy's address as seen from the container (docker bridge gateway).
+    FORWARDED_ALLOW_IPS: ${FORWARDED_ALLOW_IPS:?set the reverse proxy IP}
+  secrets:
+    - DATABASE_URL
+    - REDIS_URL
+    - SECRET_KEY
+    - source: OPENAI_API_KEY
+      target: OPENAI_API_KEY
+  tmpfs:
+    - /tmp:size=64m,mode=1777  # multipart uploads may spool to disk
+
+services:
+  db:
+    <<: *hardening
+    image: postgres:16-alpine
+    read_only: false  # postgres writes its data dir and runtime files
+    cap_drop: []      # the entrypoint needs to chown/switch user
+    environment:
+      POSTGRES_USER: budget
+      POSTGRES_DB: budget
+      POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+    secrets: [POSTGRES_PASSWORD]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U budget -d budget"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    <<: *hardening
+    image: redis:7-alpine
+    read_only: false
+    cap_drop: []
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$(cat /run/secrets/REDIS_PASSWORD)\" --save '' --appendonly no"]
+    secrets: [REDIS_PASSWORD]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$(cat /run/secrets/REDIS_PASSWORD)\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+    depends_on:
+      db: { condition: service_healthy }
+
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1g }
+
+secrets:
+  DATABASE_URL: { file: ./secrets/DATABASE_URL }
+  REDIS_URL: { file: ./secrets/REDIS_URL }
+  SECRET_KEY: { file: ./secrets/SECRET_KEY }
+  OPENAI_API_KEY: { file: ./secrets/OPENAI_API_KEY }  # may be an empty file when AI_PROVIDER=none
+  POSTGRES_PASSWORD: { file: ./secrets/POSTGRES_PASSWORD }
+  REDIS_PASSWORD: { file: ./secrets/REDIS_PASSWORD }
+
+volumes:
+  pgdata:

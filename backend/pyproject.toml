@@ -1,0 +1,112 @@
+[project]
+name = "budgetanalytics-backend"
+version = "0.1.0"
+description = "BudgetAnalytics backend API"
+requires-python = ">=3.12"
+
+# Source of truth for direct dependencies (loose lower bounds).
+# Exact, hash-pinned lock files are generated from this file:
+#
+#   uv pip compile pyproject.toml --universal --python-version 3.12 \
+#       --generate-hashes -o requirements.txt
+#   uv pip compile pyproject.toml --extra dev --universal --python-version 3.12 \
+#       --generate-hashes -o requirements-dev.txt
+#
+# Install with plain pip:
+#   runtime:      pip install --require-hashes -r requirements.txt
+#   development:  pip install --require-hashes -r requirements-dev.txt
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "sqlalchemy[asyncio]>=2.0",
+    "asyncpg>=0.29",
+    "alembic>=1.13",
+    "pydantic>=2.7",
+    "pydantic-settings>=2.3",
+    "pyjwt>=2.10",
+    "pwdlib[argon2,bcrypt]>=0.2",
+    "python-multipart>=0.0.9",
+    "email-validator>=2.1",
+    # IANA time zones for zoneinfo on platforms without a system database
+    # (Windows, minimal images). Asia/Almaty's 2024 change needs >= 2024a.
+    "tzdata>=2024.1",
+    # HTTP client for LLM providers (no vendor SDKs).
+    "httpx>=0.27",
+    # Statement import: XLSX reading; defusedxml hardens openpyxl's XML parsing
+    # (XXE / entity-expansion attacks) and is picked up by openpyxl automatically.
+    "openpyxl>=3.1",
+    "defusedxml>=0.7",
+    # Shared rate-limit counters across workers/instances (required in production).
+    "redis>=5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = ["-ra", "--strict-markers", "--strict-config"]
+asyncio_mode = "auto"
+# One event loop for the whole run: the app's module-level async engine
+# (connection pool) must not be shared across event loops.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+markers = [
+    "integration: needs a real PostgreSQL database (set TEST_DATABASE_URL)",
+]
+filterwarnings = ["error::DeprecationWarning:app.*"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes (unused/undefined names, imports)
+    "I",     # import sorting
+    "B",     # bugbear
+    "UP",    # pyupgrade
+    "ASYNC", # blocking calls in async code
+    "S",     # bandit security checks
+]
+ignore = [
+    "B008",  # FastAPI Depends()/Query() in argument defaults is the framework idiom
+    "UP042", # (str, Enum) -> StrEnum changes str() of enum members; not a safe mechanical fix
+]
+
+[tool.ruff.lint.isort]
+# The local ./alembic migrations folder shadows the package name.
+known-third-party = ["alembic"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106", "S107"]  # assert and test-only credentials
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------- mypy
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+files = ["app"]
+check_untyped_defs = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = ["openpyxl", "openpyxl.*"]
+ignore_missing_imports = true

@@ -182,31 +182,52 @@ AI не должен получать ФИО, ИИН, полный номер к
 
 Публичные контракты уточнять по фактической реализации и тестам, не считать этот список уже реализованным.
 
+Реализовано сейчас (полный контракт — `/openapi.json`): `/auth`, `/categories` (тип `income`/`expense`/`any`, фильтр `?kind=`), `/accounts`, `/banks` (справочник, засеян миграцией), `/goals` (финансовые цели с расчётом прогресса), `/transactions`, `/budgets`, `/deposits` (+ калькулятор), `/analytics`, `/dashboard/overview`, `/advisor`, `/imports`.
+
 ## 9. Разработка и запуск
 
-Перед запуском проекта добавить и поддерживать:
+Все команды выполняются из каталога `backend/`. Нужны Python 3.12+ и Docker (для PostgreSQL).
 
-- `.env.example` без реальных секретов;
-- `pyproject.toml` или другой единый dependency manifest;
-- `Dockerfile` и `compose.yaml`;
-- Alembic migrations;
-- `.gitignore`;
-- health/readiness endpoints;
-- pytest suite;
-- инструкции локального запуска и миграций.
+Файлы:
 
-Пример ожидаемого workflow после настройки проекта:
+- `pyproject.toml` — прямые зависимости и настройки pytest/ruff;
+- `requirements.txt` / `requirements-dev.txt` — lock-файлы с точными версиями и хешами (генерируются командой из `pyproject.toml`);
+- `.env.example` — все настройки с безопасными заглушками;
+- `alembic/` — миграции (схема БД управляется только ими);
+- `Dockerfile`, `docker-compose.yml` — PostgreSQL, миграции и API.
+
+Локальный запуск (API на хосте, PostgreSQL в Docker):
 
 ```bash
-cp .env.example .env
-docker compose up -d db redis
-# установить зависимости согласно выбранному manifest
+cp .env.example .env          # задать POSTGRES_PASSWORD и SECRET_KEY
+docker compose up -d db
+python -m venv .venv && . .venv/bin/activate
+pip install --require-hashes -r requirements-dev.txt
 alembic upgrade head
-uvicorn app.main:app --reload
-pytest -q
+uvicorn app.main:app --reload --no-access-log
 ```
 
-Команды должны быть приведены в соответствие с реальными файлами проекта.
+Всё в Docker (PostgreSQL → миграции → API на `127.0.0.1:8000`):
+
+```bash
+docker compose up --build
+```
+
+Проверки:
+
+```bash
+pytest -q                                   # unit; integration пропускаются без БД
+TEST_DATABASE_URL=postgresql+asyncpg://budget:<password>@localhost:5432/budget_test pytest -q
+ruff check .
+```
+
+`TEST_DATABASE_URL` должен указывать на отдельную тестовую БД: после каждого теста её таблицы очищаются.
+
+Эндпоинты: `/health` (liveness), `/health/ready` (проверка БД), API под `/api/v1`, документация `/docs` (выключена в `ENVIRONMENT=production`, если не задан `DOCS_ENABLED=true`).
+
+Redis нужен в production для общих счётчиков rate limiting (в разработке — счётчики в памяти).
+
+Production-развёртывание, откат и бэкапы: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Ревью безопасности и чек-лист готовности: [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md).
 
 ## 10. Roadmap
 

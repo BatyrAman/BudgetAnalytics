@@ -1,12 +1,19 @@
-from __future__ import annotations
-
 from decimal import Decimal
+from typing import Any
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import PaginationParams, get_current_active_user, get_db
+from app.api.deps import (
+    PaginationParams,
+    get_current_active_user,
+    get_db,
+    get_timezone,
+    parse_month,
+)
+from app.core.errors import ErrorResponse
 from app.models.budget import Budget
 from app.models.user import User
 from app.schemas.budget import (
@@ -18,147 +25,105 @@ from app.schemas.budget import (
     BudgetResponse,
     BudgetStatistics,
     BudgetUpdate,
+    BudgetUtilizationResponse,
 )
+from app.services.budgets import BudgetService, budget_progress_percent
+from app.services.financial_summary import FinancialSummaryService
 
 router = APIRouter(prefix="/budgets", tags=["Budgets"])
 
+_ERRORS: dict[int | str, dict[str, Any]] = {
+    400: {"model": ErrorResponse},
+    401: {"model": ErrorResponse},
+    404: {"model": ErrorResponse},
+    422: {"model": ErrorResponse},
+}
+_LEGACY = (
+    "DEPRECATED: based on the manually entered `spent` value. "
+    "Use GET /budgets/{id}/utilization for spending computed from transactions."
+)
+
 
 def _progress(budget: Budget) -> float:
-    if budget.monthly_limit <= 0:
-        return 0.0
-    return float(round((budget.spent / budget.monthly_limit) * 100, 2))
+    return budget_progress_percent(budget.spent, budget.monthly_limit)
 
 
 def _to_detail(budget: Budget) -> BudgetDetail:
-    remaining = budget.monthly_limit - budget.spent
-    progress = _progress(budget)
-
     return BudgetDetail(
         **BudgetResponse.model_validate(budget).model_dump(),
-        remaining=remaining,
-        progress=progress,
+        remaining=budget.monthly_limit - budget.spent,
+        progress=_progress(budget),
         is_exceeded=budget.spent > budget.monthly_limit,
     )
 
 
-async def _get_owned_budget(
-    db: AsyncSession,
-    budget_id: int,
-    user_id: int,
-) -> Budget:
-
-    budget = await db.scalar(
-        select(Budget).where(
-            Budget.id == budget_id,
-            Budget.user_id == user_id,
-        )
-    )
-
-    if budget is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Budget not found",
-        )
-
-    return budget
-
-
 @router.post(
-    "",
-    response_model=BudgetResponse,
-    status_code=status.HTTP_201_CREATED,
+    "", response_model=BudgetResponse, status_code=status.HTTP_201_CREATED, responses=_ERRORS
 )
 async def create_budget(
     payload: BudgetCreate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> Budget:
-
-    budget = Budget(
-        title=payload.title,
-        monthly_limit=payload.monthly_limit,
-        spent=Decimal("0"),
-        user_id=current_user.id,
-    )
-
-    db.add(budget)
+    budget = await BudgetService(db).create(payload, current_user)
     await db.commit()
-    await db.refresh(budget)
-
     return budget
 
 
-@router.get(
-    "",
-    response_model=BudgetListResponse,
-)
+@router.get("", response_model=BudgetListResponse, responses=_ERRORS)
 async def list_budgets(
     pagination: PaginationParams = Depends(),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> BudgetListResponse:
-
-    total = await db.scalar(
-        select(func.count(Budget.id)).where(Budget.user_id == current_user.id)
-    )
-
-    result = await db.execute(
+    total = await db.scalar(select(func.count(Budget.id)).where(Budget.user_id == current_user.id))
+    rows = await db.scalars(
         select(Budget)
         .where(Budget.user_id == current_user.id)
-        .order_by(Budget.created_at.desc())
+        .order_by(Budget.created_at.desc(), Budget.id.desc())
         .limit(pagination.limit)
         .offset(pagination.offset)
     )
-
-    return BudgetListResponse(items=result.scalars().all(), total=total or 0)
-
-
-@router.get(
-    "/statistics",
-    response_model=BudgetStatistics,
-)
-async def get_statistics(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> BudgetStatistics:
-
-    result = await db.execute(
-        select(Budget).where(Budget.user_id == current_user.id)
+    return BudgetListResponse(
+        items=[BudgetResponse.model_validate(b) for b in rows],
+        total=total or 0,
+        limit=pagination.limit,
+        offset=pagination.offset,
     )
-    budgets = result.scalars().all()
 
+
+# ---------------------------------------------------------------- legacy (manual `spent`)
+async def _default_currency_budgets(db: AsyncSession, user: User) -> list[Budget]:
+    rows = await db.scalars(
+        select(Budget).where(
+            Budget.user_id == user.id, Budget.currency_code == user.default_currency_code
+        )
+    )
+    return list(rows)
+
+
+@router.get("/statistics", response_model=BudgetStatistics, deprecated=True, description=_LEGACY)
+async def get_statistics(
+    current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)
+) -> BudgetStatistics:
+    """Totals over budgets in the user's default currency only."""
+
+    budgets = await _default_currency_budgets(db, current_user)
     total_budget = sum((b.monthly_limit for b in budgets), Decimal("0"))
     total_spent = sum((b.spent for b in budgets), Decimal("0"))
-    remaining = total_budget - total_spent
-
-    utilization = (
-        float(round((total_spent / total_budget) * 100, 2))
-        if total_budget > 0
-        else 0.0
-    )
-
     return BudgetStatistics(
         total_budget=total_budget,
         total_spent=total_spent,
-        remaining=remaining,
-        utilization_percent=utilization,
+        remaining=total_budget - total_spent,
+        utilization_percent=budget_progress_percent(total_spent, total_budget),
     )
 
 
-@router.get(
-    "/progress",
-    response_model=list[BudgetProgress],
-)
+@router.get("/progress", response_model=list[BudgetProgress], deprecated=True, description=_LEGACY)
 async def get_progress(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)
 ) -> list[BudgetProgress]:
-
-    result = await db.execute(
-        select(Budget).where(Budget.user_id == current_user.id)
-    )
-    budgets = result.scalars().all()
-
+    budgets = await db.scalars(select(Budget).where(Budget.user_id == current_user.id))
     return [
         BudgetProgress(
             budget_id=b.id,
@@ -172,37 +137,24 @@ async def get_progress(
     ]
 
 
-@router.get(
-    "/alerts",
-    response_model=list[BudgetAlert],
-)
+@router.get("/alerts", response_model=list[BudgetAlert], deprecated=True, description=_LEGACY)
 async def get_alerts(
-    threshold: float = 80.0,
+    threshold: Decimal = Query(default=Decimal("80"), ge=0, le=1000),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[BudgetAlert]:
-    """
-    Бюджеты, использование которых превысило `threshold` % от лимита.
-    """
-
-    result = await db.execute(
-        select(Budget).where(Budget.user_id == current_user.id)
-    )
-    budgets = result.scalars().all()
+    """Budgets whose usage reached ``threshold`` % of the limit."""
 
     alerts: list[BudgetAlert] = []
-
-    for b in budgets:
+    for b in await db.scalars(select(Budget).where(Budget.user_id == current_user.id)):
         progress = _progress(b)
-
-        if progress < threshold:
+        if Decimal(str(progress)) < threshold:
             continue
-
-        if b.spent > b.monthly_limit:
-            message = f"Бюджет «{b.title}» превышен."
-        else:
-            message = f"Бюджет «{b.title}» почти израсходован ({progress:.0f}%)."
-
+        message = (
+            f"Бюджет «{b.title}» превышен."
+            if b.spent > b.monthly_limit
+            else f"Бюджет «{b.title}» почти израсходован ({progress:.0f}%)."
+        )
         alerts.append(
             BudgetAlert(
                 title=b.title,
@@ -212,27 +164,69 @@ async def get_alerts(
                 message=message,
             )
         )
-
     return alerts
 
 
-@router.get(
-    "/{budget_id}",
-    response_model=BudgetDetail,
-)
+# ---------------------------------------------------------------- single budget
+@router.get("/{budget_id}", response_model=BudgetDetail, responses=_ERRORS)
 async def get_budget(
     budget_id: int,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> BudgetDetail:
+    return _to_detail(await BudgetService(db).get(budget_id, current_user.id))
 
-    budget = await _get_owned_budget(db, budget_id, current_user.id)
-    return _to_detail(budget)
+
+@router.get("/{budget_id}/utilization", response_model=BudgetUtilizationResponse, responses=_ERRORS)
+async def get_budget_utilization(
+    budget_id: int,
+    month: str | None = Query(
+        default=None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM; default: current month"
+    ),
+    tz: ZoneInfo = Depends(get_timezone),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> BudgetUtilizationResponse:
+    """Actual utilization for a calendar month (local to ``tz``), computed from
+    transactions: expenses − refunds, in the budget's currency and category."""
+
+    first_day = parse_month(month, tz)
+    result = await FinancialSummaryService(db).budget_utilization(
+        current_user.id, budget_id, first_day, tz
+    )
+    return BudgetUtilizationResponse(
+        budget_id=budget_id,
+        month=f"{first_day:%Y-%m}",
+        currency_code=result.currency_code,
+        limit=result.limit,
+        spent=result.spent,
+        remaining=result.remaining,
+        utilization_percent=result.utilization_percent,
+        is_exceeded=result.is_exceeded,
+    )
+
+
+async def _update(budget_id: int, payload: BudgetUpdate, user: User, db: AsyncSession) -> Budget:
+    budget = await BudgetService(db).update(budget_id, payload, user.id)
+    await db.commit()
+    return budget
+
+
+@router.patch("/{budget_id}", response_model=BudgetResponse, responses=_ERRORS)
+async def patch_budget(
+    budget_id: int,
+    payload: BudgetUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> Budget:
+    return await _update(budget_id, payload, current_user, db)
 
 
 @router.put(
     "/{budget_id}",
     response_model=BudgetResponse,
+    responses=_ERRORS,
+    description="Same partial-update semantics as PATCH (kept for existing clients).",
 )
 async def update_budget(
     budget_id: int,
@@ -240,30 +234,14 @@ async def update_budget(
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> Budget:
-
-    budget = await _get_owned_budget(db, budget_id, current_user.id)
-
-    for field, value in payload.model_dump(exclude_unset=True).items():
-        setattr(budget, field, value)
-
-    db.add(budget)
-    await db.commit()
-    await db.refresh(budget)
-
-    return budget
+    return await _update(budget_id, payload, current_user, db)
 
 
-@router.delete(
-    "/{budget_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
-)
+@router.delete("/{budget_id}", status_code=status.HTTP_204_NO_CONTENT, responses=_ERRORS)
 async def delete_budget(
     budget_id: int,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ) -> None:
-
-    budget = await _get_owned_budget(db, budget_id, current_user.id)
-
-    await db.delete(budget)
+    await BudgetService(db).delete(budget_id, current_user.id)
     await db.commit()

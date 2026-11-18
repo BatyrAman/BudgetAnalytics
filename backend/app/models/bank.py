@@ -1,30 +1,20 @@
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.models.base import Base
+from app.models.base import Base, TimestampMixin
 
 
-class Bank(Base):
+class Bank(Base, TimestampMixin):
+    """Financial institution — global reference data, not user-owned."""
+
     __tablename__ = "banks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    name: Mapped[str] = mapped_column(
-        String(100),
-        unique=True
-    )
+    name: Mapped[str] = mapped_column(String(100), unique=True)
 
-    logo: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True
-    )
+    logo: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    transactions = relationship(
-        "Transaction",
-        back_populates="bank"
-    )
-
-    deposits = relationship(
-        "Deposit",
-        back_populates="bank"
-    )
+    transactions = relationship("Transaction", back_populates="bank")
+    deposits = relationship("Deposit", back_populates="bank")
+    accounts = relationship("Account", back_populates="bank")

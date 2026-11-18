@@ -5,19 +5,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class DepositBase(BaseModel):
-    amount: Decimal = Field(
-        ...,
-        gt=0,
-        decimal_places=2,
-        description="Deposit amount"
-    )
+    amount: Decimal = Field(..., gt=0, decimal_places=2, description="Deposit amount")
 
     interest_rate: Decimal = Field(
-        ...,
-        ge=0,
-        le=100,
-        decimal_places=2,
-        description="Annual interest rate (%)"
+        ..., ge=0, le=100, decimal_places=2, description="Annual interest rate (%)"
     )
 
     start_date: date
@@ -32,18 +23,9 @@ class DepositCreate(DepositBase):
 
 
 class DepositUpdate(BaseModel):
-    amount: Decimal | None = Field(
-        default=None,
-        gt=0,
-        decimal_places=2
-    )
+    amount: Decimal | None = Field(default=None, gt=0, decimal_places=2)
 
-    interest_rate: Decimal | None = Field(
-        default=None,
-        ge=0,
-        le=100,
-        decimal_places=2
-    )
+    interest_rate: Decimal | None = Field(default=None, ge=0, le=100, decimal_places=2)
 
     start_date: date | None = None
 
@@ -61,9 +43,7 @@ class DepositResponse(DepositBase):
 
     updated_at: datetime
 
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DepositDetail(DepositResponse):

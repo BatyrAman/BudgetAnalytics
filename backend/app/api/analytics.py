@@ -1,385 +1,251 @@
-from __future__ import annotations
+"""Engine-based analytics (current API).
 
-from datetime import date
-from decimal import Decimal
+Common query parameters:
+* ``date_from`` / ``date_to`` — inclusive local dates (default: current month);
+* ``tz`` — IANA time zone for day/month boundaries (default Asia/Almaty);
+* ``currency`` — ISO code (default: the user's default currency). Amounts in
+  other currencies are never converted or mixed in.
+"""
+
+from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_active_user, get_db
-from app.models.bank import Bank
-from app.models.category import Category
-from app.models.enums import TransactionType
-from app.models.transaction import Transaction
-from app.models.user import User
-from app.schemas.analytics import (
-    AIRecommendation,
-    AnalyticsResponse,
-    BankAnalytics,
-    CashFlowAnalytics,
-    CategoryAnalytics,
-    FinancialHealth,
-    IncomeExpenseTrend,
-    InvestmentAnalytics,
-    MonthlyComparison,
-    SavingsAnalytics,
-    SpendingForecast,
+from app.api.deps import (
+    DateRange,
+    get_currency,
+    get_current_active_user,
+    get_date_range,
+    get_db,
+    get_timezone,
+    parse_month,
 )
-from app.services.ai.advisor import FinancialAdvisorService
-from app.services.analytics.forecasting import ForecastingService
-from app.services.analytics.income import IncomeAnalyticsService
-from app.services.analytics.saving import SavingAnalyticsService
-from app.services.analytics.spending import SpendingAnalyticsService
+from app.core.errors import ErrorResponse
+from app.models.user import User
+from app.schemas.reports import (
+    CategoryAmountResponse,
+    CategoryBreakdownResponse,
+    ComparisonResponse,
+    ExpenseSummaryResponse,
+    IncomeSummaryResponse,
+    MetricChangeResponse,
+    MonthlyResponse,
+    MonthSummary,
+    PeriodInfo,
+    SavingsRateResponse,
+    SummaryResponse,
+)
+from app.services.finance import (
+    CurrencySpec,
+    PeriodSummary,
+    expense_to_income_percent,
+    year_period,
+)
+from app.services.financial_summary import CategoryAmount, FinancialSummaryService, MetricChange
 
 router = APIRouter(prefix="/analytics", tags=["Analytics"])
 
-
-def _shift_month(base: date, months_back: int) -> date:
-    """Возвращает дату, сдвинутую на `months_back` месяцев назад."""
-
-    month_index = base.month - 1 - months_back
-    year = base.year + month_index // 12
-    month = month_index % 12 + 1
-
-    return date(year, month, 1)
-
-
-_STATUS_LABELS = {
-    "excellent": "Отлично",
-    "good": "Хорошо",
-    "average": "Средне",
-    "poor": "Слабо",
-    "critical": "Критично",
+_ERRORS: dict[int | str, dict[str, Any]] = {
+    401: {"model": ErrorResponse},
+    422: {"model": ErrorResponse},
 }
 
 
-@router.get(
-    "/cash-flow",
-    response_model=CashFlowAnalytics,
-)
-async def get_cash_flow(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> CashFlowAnalytics:
-
-    saving_service = SavingAnalyticsService(db)
-    health = await saving_service.financial_health(current_user.id)
-
-    return CashFlowAnalytics(
-        total_income=health["income"],
-        total_expense=health["expense"],
-        net_cash_flow=health["balance"],
-        savings_rate=float(health["saving_rate"]),
-    )
+def _period(r: DateRange) -> PeriodInfo:
+    return PeriodInfo(date_from=r.date_from, date_to=r.date_to, timezone=r.tz.key)
 
 
-@router.get(
-    "/trend",
-    response_model=list[IncomeExpenseTrend],
-)
-async def get_trend(
-    months: int = Query(default=6, ge=1, le=24),
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[IncomeExpenseTrend]:
-    """
-    Динамика доходов/расходов помесячно за последние `months` месяцев.
-    """
-
-    income_service = IncomeAnalyticsService(db)
-    spending_service = SpendingAnalyticsService(db)
-
-    today = date.today()
-    trend: list[IncomeExpenseTrend] = []
-
-    for offset in range(months - 1, -1, -1):
-        target = _shift_month(today, offset)
-
-        income = await income_service.get_monthly_income(
-            current_user.id, target.year, target.month
-        )
-        expense = await spending_service.get_monthly_expenses(
-            current_user.id, target.year, target.month
-        )
-
-        trend.append(
-            IncomeExpenseTrend(
-                period=f"{target.year}-{target.month:02d}",
-                income=income,
-                expense=expense,
-            )
-        )
-
-    return trend
-
-
-@router.get(
-    "/categories",
-    response_model=list[CategoryAnalytics],
-)
-async def get_categories(
-    limit: int = Query(default=10, ge=1, le=50),
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[CategoryAnalytics]:
-
-    spending_service = SpendingAnalyticsService(db)
-
-    total_expense = await spending_service.get_total_expenses(current_user.id)
-    rows = await spending_service.get_top_categories(current_user.id, limit=limit)
-
-    counts_result = await db.execute(
-        select(Category.name, func.count(Transaction.id))
-        .join(Category, Category.id == Transaction.category_id)
-        .where(
-            Transaction.user_id == current_user.id,
-            Transaction.transaction_type == TransactionType.EXPENSE,
-        )
-        .group_by(Category.name)
-    )
-    counts_by_name = dict(counts_result.all())
-
-    denominator = total_expense if total_expense > 0 else Decimal("1")
-
-    categories: list[CategoryAnalytics] = []
-    for name, total in rows:
-        amount = Decimal(total)
-        categories.append(
-            CategoryAnalytics(
-                category=name,
-                amount=amount,
-                transaction_count=counts_by_name.get(name, 0),
-                percentage=float(round((amount / denominator) * 100, 2)),
-            )
-        )
-
-    return categories
-
-
-@router.get(
-    "/forecast",
-    response_model=SpendingForecast,
-)
-async def get_forecast(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> SpendingForecast:
-
-    forecasting_service = ForecastingService(db)
-    summary = await forecasting_service.forecast_summary(current_user.id)
-
-    confidence = 0.8 if summary["predicted_income"] > 0 else 0.3
-
-    return SpendingForecast(
-        next_month_expense=summary["predicted_expense"],
-        predicted_savings=summary["predicted_balance"],
-        confidence=confidence,
-    )
-
-
-@router.get(
-    "/savings",
-    response_model=SavingsAnalytics,
-)
-async def get_savings(
-    target: Decimal = Query(default=Decimal("500000")),
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> SavingsAnalytics:
-
-    saving_service = SavingAnalyticsService(db)
-    current_savings = await saving_service.get_balance(current_user.id)
-
-    progress = (
-        float(round((current_savings / target) * 100, 2)) if target > 0 else 0.0
-    )
-    remaining = target - current_savings
-
-    return SavingsAnalytics(
-        current_savings=current_savings,
-        target_savings=target,
-        progress=max(progress, 0.0),
-        remaining=remaining if remaining > 0 else Decimal("0"),
-    )
-
-
-@router.get(
-    "/health",
-    response_model=FinancialHealth,
-)
-async def get_health(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> FinancialHealth:
-
-    advisor = FinancialAdvisorService(db)
-    report = await advisor.generate_advice(current_user.id)
-
-    saving_service = SavingAnalyticsService(db)
-    health = await saving_service.financial_health(current_user.id)
-
-    recommendation = (
-        report["recommendations"][0]
-        if report["recommendations"]
-        else "Финансовое состояние в норме."
-    )
-
-    return FinancialHealth(
-        score=report["financial_score"],
-        status=_STATUS_LABELS.get(health["status"], health["status"]),
-        recommendation=recommendation,
-    )
-
-
-@router.get(
-    "/recommendations",
-    response_model=list[AIRecommendation],
-)
-async def get_recommendations(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[AIRecommendation]:
-
-    advisor = FinancialAdvisorService(db)
-    report = await advisor.generate_advice(current_user.id)
-
-    recommendations: list[AIRecommendation] = []
-
-    for text in report["warnings"]:
-        recommendations.append(
-            AIRecommendation(title="Внимание", description=text, priority="high")
-        )
-
-    for text in report["recommendations"]:
-        recommendations.append(
-            AIRecommendation(title="Совет", description=text, priority="medium")
-        )
-
-    for text in report["opportunities"]:
-        recommendations.append(
-            AIRecommendation(title="Возможность", description=text, priority="low")
-        )
-
-    return recommendations
-
-
-@router.get(
-    "/banks",
-    response_model=list[BankAnalytics],
-)
-async def get_bank_analytics(
-    current_user: User = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[BankAnalytics]:
-
-    from sqlalchemy import case
-
-    stmt = (
-        select(
-            Bank.name,
-            func.sum(
-                case(
-                    (Transaction.transaction_type == TransactionType.INCOME, Transaction.amount),
-                    else_=0,
-                )
-            ),
-            func.sum(
-                case(
-                    (Transaction.transaction_type == TransactionType.EXPENSE, Transaction.amount),
-                    else_=0,
-                )
-            ),
-            func.count(Transaction.id),
-        )
-        .join(Bank, Bank.id == Transaction.bank_id)
-        .where(Transaction.user_id == current_user.id)
-        .group_by(Bank.name)
-    )
-
-    result = await db.execute(stmt)
-
+def _categories(items: list[CategoryAmount]) -> list[CategoryAmountResponse]:
     return [
-        BankAnalytics(
-            bank_name=name,
-            income=Decimal(income or 0),
-            expense=Decimal(expense or 0),
-            transaction_count=count,
+        CategoryAmountResponse(
+            category_id=i.category_id,
+            name=i.name,
+            amount=i.amount,
+            transaction_count=i.transaction_count,
+            share_percent=i.share_percent,
         )
-        for name, income, expense, count in result.all()
+        for i in items
     ]
 
 
-@router.get(
-    "",
-    response_model=AnalyticsResponse,
-)
-async def get_full_analytics(
+def _month(summary: PeriodSummary) -> MonthSummary:
+    t = summary.totals
+    return MonthSummary(
+        month=summary.period.label,
+        income=t.income,
+        net_expenses=t.net_expenses,
+        net_cash_flow=t.net_cash_flow,
+        savings_rate=t.savings_rate,
+        transaction_count=t.transaction_count,
+    )
+
+
+def _change(c: MetricChange) -> MetricChangeResponse:
+    return MetricChangeResponse(
+        current=c.current, previous=c.previous, change=c.change, change_percent=c.change_percent
+    )
+
+
+@router.get("/summary", response_model=SummaryResponse, responses=_ERRORS)
+async def get_summary(
+    period: DateRange = Depends(get_date_range),
+    currency: CurrencySpec = Depends(get_currency),
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
-) -> AnalyticsResponse:
-    """
-    Полный аналитический отчёт: собирает все секции в один объект
-    для главного экрана аналитики.
-    """
+) -> SummaryResponse:
+    """Income, expenses, refunds, transfers, net cash flow and savings rate."""
 
-    cash_flow = await get_cash_flow(current_user, db)
-    forecast = await get_forecast(current_user, db)
-    savings = await get_savings(Decimal("500000"), current_user, db)
-    health = await get_health(current_user, db)
-    trend = await get_trend(6, current_user, db)
-    categories = await get_categories(10, current_user, db)
-    banks = await get_bank_analytics(current_user, db)
-    recommendations = await get_recommendations(current_user, db)
-
-    income_service = IncomeAnalyticsService(db)
-    spending_service = SpendingAnalyticsService(db)
-
-    today = date.today()
-    previous = _shift_month(today, 1)
-
-    current_month_income = await income_service.get_monthly_income(
-        current_user.id, today.year, today.month
+    t = await FinancialSummaryService(db).totals(
+        current_user.id, period.start, period.end, currency
     )
-    previous_month_income = await income_service.get_monthly_income(
-        current_user.id, previous.year, previous.month
-    )
-    current_month_expense = await spending_service.get_monthly_expenses(
-        current_user.id, today.year, today.month
-    )
-    previous_month_expense = await spending_service.get_monthly_expenses(
-        current_user.id, previous.year, previous.month
+    return SummaryResponse(
+        period=_period(period),
+        currency_code=currency.code,
+        income=t.income,
+        gross_expenses=t.gross_expenses,
+        refunds=t.refunds,
+        net_expenses=t.net_expenses,
+        net_cash_flow=t.net_cash_flow,
+        transfers_in=t.transfers_in,
+        transfers_out=t.transfers_out,
+        savings_rate=t.savings_rate,
+        transaction_count=t.transaction_count,
     )
 
-    def _growth(current: Decimal, previous_value: Decimal) -> float:
-        if previous_value <= 0:
-            return 0.0
-        return float(round((current - previous_value) / previous_value * 100, 2))
 
-    monthly_comparison = MonthlyComparison(
-        current_month_income=current_month_income,
-        previous_month_income=previous_month_income,
-        current_month_expense=current_month_expense,
-        previous_month_expense=previous_month_expense,
-        income_growth_percent=_growth(current_month_income, previous_month_income),
-        expense_growth_percent=_growth(current_month_expense, previous_month_expense),
+@router.get("/income", response_model=IncomeSummaryResponse, responses=_ERRORS)
+async def get_income(
+    period: DateRange = Depends(get_date_range),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> IncomeSummaryResponse:
+    total, items = await FinancialSummaryService(db).category_breakdown(
+        current_user.id, period.start, period.end, currency, "income"
+    )
+    return IncomeSummaryResponse(
+        period=_period(period),
+        currency_code=currency.code,
+        total=total,
+        by_category=_categories(items),
     )
 
-    investment = InvestmentAnalytics(
-        invested_amount=Decimal("0"),
-        expected_profit=Decimal("0"),
-        expected_value=Decimal("0"),
+
+@router.get("/expenses", response_model=ExpenseSummaryResponse, responses=_ERRORS)
+async def get_expenses(
+    period: DateRange = Depends(get_date_range),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExpenseSummaryResponse:
+    """Gross expenses, refunds and net expenses with a per-category breakdown."""
+
+    service = FinancialSummaryService(db)
+    totals = await service.totals(current_user.id, period.start, period.end, currency)
+    _, items = await service.category_breakdown(
+        current_user.id, period.start, period.end, currency, "expense"
+    )
+    return ExpenseSummaryResponse(
+        period=_period(period),
+        currency_code=currency.code,
+        gross_expenses=totals.gross_expenses,
+        refunds=totals.refunds,
+        net_expenses=totals.net_expenses,
+        by_category=_categories(items),
     )
 
-    return AnalyticsResponse(
-        cash_flow=cash_flow,
-        monthly_comparison=monthly_comparison,
-        spending_forecast=forecast,
-        savings=savings,
-        investment=investment,
-        financial_health=health,
-        income_expense_trend=trend,
-        categories=categories,
-        banks=banks,
-        recommendations=recommendations,
+
+@router.get("/savings-rate", response_model=SavingsRateResponse, responses=_ERRORS)
+async def get_savings_rate(
+    period: DateRange = Depends(get_date_range),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> SavingsRateResponse:
+    """(income − net expenses) / income × 100; null when there is no income."""
+
+    t = await FinancialSummaryService(db).totals(
+        current_user.id, period.start, period.end, currency
+    )
+    return SavingsRateResponse(
+        period=_period(period),
+        currency_code=currency.code,
+        income=t.income,
+        net_expenses=t.net_expenses,
+        savings_rate=t.savings_rate,
+        expense_to_income_percent=expense_to_income_percent(t.income, t.net_expenses),
+    )
+
+
+@router.get("/category-breakdown", response_model=CategoryBreakdownResponse, responses=_ERRORS)
+async def get_category_breakdown(
+    kind: str = Query(default="expense", pattern="^(expense|income)$"),
+    period: DateRange = Depends(get_date_range),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> CategoryBreakdownResponse:
+    """Per category: net expenses (expenses − refunds) or income, with shares
+    of the total (null when the total is not positive)."""
+
+    total, items = await FinancialSummaryService(db).category_breakdown(
+        current_user.id, period.start, period.end, currency, kind
+    )
+    return CategoryBreakdownResponse(
+        period=_period(period),
+        currency_code=currency.code,
+        kind=kind,
+        total=total,
+        items=_categories(items),
+    )
+
+
+@router.get("/monthly", response_model=MonthlyResponse, responses=_ERRORS)
+async def get_monthly(
+    year: int = Query(ge=1900, le=2200),
+    tz: ZoneInfo = Depends(get_timezone),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> MonthlyResponse:
+    """Twelve local calendar months (empty months included) and the year total."""
+
+    service = FinancialSummaryService(db)
+    months = await service.monthly_summaries(current_user.id, year, currency.code, tz)
+    year_total = await service.period_summary(current_user.id, year_period(year, tz), currency)
+    return MonthlyResponse(
+        year=year,
+        timezone=tz.key,
+        currency_code=currency.code,
+        months=[_month(m) for m in months],
+        total=_month(year_total),
+    )
+
+
+@router.get("/comparison", response_model=ComparisonResponse, responses=_ERRORS)
+async def get_comparison(
+    month: str | None = Query(
+        default=None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM; default: current"
+    ),
+    tz: ZoneInfo = Depends(get_timezone),
+    currency: CurrencySpec = Depends(get_currency),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> ComparisonResponse:
+    """A month vs the previous calendar month (local to ``tz``)."""
+
+    result = await FinancialSummaryService(db).compare_months(
+        current_user.id, parse_month(month, tz), currency, tz
+    )
+    return ComparisonResponse(
+        timezone=tz.key,
+        currency_code=currency.code,
+        current=_month(result.current),
+        previous=_month(result.previous),
+        income=_change(result.income),
+        net_expenses=_change(result.net_expenses),
+        net_cash_flow=_change(result.net_cash_flow),
+        savings_rate_change_pp=result.savings_rate_change_pp,
     )

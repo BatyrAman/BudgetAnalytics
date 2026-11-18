@@ -21,34 +21,29 @@ from app.schemas.deposit import (
     DepositStatistics,
     DepositUpdate,
 )
+from app.services.deposits import expected_profit, maturity_of
 
-router = APIRouter(prefix="/investments", tags=["Investments"])
+# DEPRECATED: superseded by /deposits (currency, capitalization, effective rate,
+# calculator). Kept for existing clients; totals cover the default currency only.
+router = APIRouter(prefix="/investments", tags=["Investments (deprecated)"], deprecated=True)
 
 
 def _expected_profit(deposit: Deposit) -> Decimal:
-    duration_days = (deposit.end_date - deposit.start_date).days
-    duration_days = max(duration_days, 0)
-
-    rate = deposit.interest_rate / Decimal("100")
-
-    profit = deposit.amount * rate * Decimal(duration_days) / Decimal("365")
-
-    return profit.quantize(Decimal("0.01"))
+    return expected_profit(deposit)
 
 
 async def _to_detail(db: AsyncSession, deposit: Deposit) -> DepositDetail:
 
     bank = await db.get(Bank, deposit.bank_id)
 
-    duration_days = max((deposit.end_date - deposit.start_date).days, 0)
-    profit = _expected_profit(deposit)
+    maturity = maturity_of(deposit)
 
     return DepositDetail(
         **DepositResponse.model_validate(deposit).model_dump(),
         bank_name=bank.name if bank else "—",
-        duration_days=duration_days,
-        expected_profit=profit,
-        expected_amount=deposit.amount + profit,
+        duration_days=maturity.term_days,
+        expected_profit=maturity.interest,
+        expected_amount=maturity.maturity_amount,
         is_active=deposit.end_date >= date.today(),
     )
 
@@ -150,7 +145,10 @@ async def get_statistics(
 ) -> DepositStatistics:
 
     result = await db.execute(
-        select(Deposit).where(Deposit.user_id == current_user.id)
+        select(Deposit).where(
+            Deposit.user_id == current_user.id,
+            Deposit.currency_code == current_user.default_currency_code,
+        )
     )
     deposits = result.scalars().all()
 
@@ -180,17 +178,17 @@ async def get_chart(
     stmt = (
         select(Bank.name, func.sum(Deposit.amount))
         .join(Bank, Bank.id == Deposit.bank_id)
-        .where(Deposit.user_id == current_user.id)
+        .where(
+            Deposit.user_id == current_user.id,
+            Deposit.currency_code == current_user.default_currency_code,
+        )
         .group_by(Bank.name)
         .order_by(func.sum(Deposit.amount).desc())
     )
 
     result = await db.execute(stmt)
 
-    return [
-        DepositChartItem(label=name, amount=Decimal(total))
-        for name, total in result.all()
-    ]
+    return [DepositChartItem(label=name, amount=Decimal(total)) for name, total in result.all()]
 
 
 @router.get(
