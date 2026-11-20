@@ -554,7 +554,7 @@ Implemented measures:
 - **Containers:** the API image runs as a non-root user. PostgreSQL and Redis are not published on the host, and the published ports bind to `127.0.0.1`.
 - **Secrets:** read from environment variables (files in production). Production settings refuse a missing or weak `SECRET_KEY`.
 
-Further reading: [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) and [docs/implementation/QA_REPORT.md](docs/implementation/QA_REPORT.md).
+Further reading: [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) and [docs/implementation/QA_REPORT.md](docs/implementation/QA_REPORT.md). To report a vulnerability, follow [SECURITY.md](SECURITY.md); do not open a public issue.
 
 > **Never commit `.env` files, credentials, API keys or real financial data.** Use anonymized data for tests and samples.
 
@@ -626,6 +626,8 @@ These are not commitments or dates.
 
 ## 15. Contributing
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide and the [Code of Conduct](CODE_OF_CONDUCT.md). Because no license has been chosen yet, outside contributions need terms agreed with the owner first. In short:
+
 1. Create a branch from `main`:
    ```bash
    git checkout -b feature/short-description
@@ -642,4 +644,21 @@ These are not commitments or dates.
 
 ## 16. License
 
-No license has been specified yet. Until one is added, all rights are reserved by the authors; ask the repository owner before reusing the code.
+No license has been specified yet. Until one is added, all rights are reserved by the authors; ask the repository owner before reusing the code. BudgetAnalytics is **not** open source at this point. The options and a recommendation are in [docs/legal/LICENSING_DECISION.md](docs/legal/LICENSING_DECISION.md) (draft, pending owner approval).
+
+Third-party components keep their own licenses: see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and the [license audit](docs/legal/LICENSE_AUDIT.md).
+
+### Legal and policy documents
+
+| Document | Status |
+|---|---|
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Inventory of dependency, font, icon and image licenses |
+| [SECURITY.md](SECURITY.md) | Vulnerability reporting (private channel to be confirmed by the owner) |
+| [CONTRIBUTING.md](CONTRIBUTING.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Contributor guide; Contributor Covenant 2.1 |
+| [DISCLAIMER.md](DISCLAIMER.md) | Not financial, tax or legal advice; limits of the calculations |
+| [PRIVACY_POLICY.md](PRIVACY_POLICY.md) | **Draft**, not in effect; needs owner details and legal review |
+| [TERMS_OF_SERVICE.md](TERMS_OF_SERVICE.md) | **Draft** for a possible hosted service; not in effect |
+| [docs/legal/DATA_PROTECTION.md](docs/legal/DATA_PROTECTION.md) | Verified data inventory and flows, and questions for legal review |
+| [docs/legal/ASSET_ATTRIBUTION.md](docs/legal/ASSET_ATTRIBUTION.md) | Fonts, icons and images, and their sources |
+
+These documents describe the software's behaviour; they do not establish compliance with any law.
