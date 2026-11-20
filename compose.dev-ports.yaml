@@ -1,0 +1,12 @@
+# Optional: publish PostgreSQL and Redis on 127.0.0.1 for host tools and pytest.
+#
+#   docker compose -f compose.yaml -f compose.dev-ports.yaml up -d
+#
+# Never bind these to 0.0.0.0.
+services:
+  db:
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"

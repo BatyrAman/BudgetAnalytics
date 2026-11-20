@@ -1,271 +1,645 @@
-BudgetAnalytics
+# BudgetAnalytics
 
-> Персональный финансовый помощник для жителей Казахстана: помогает понять доходы и расходы, управлять долгами и принимать более обдуманные финансовые решения.
+A personal finance assistant for people in Kazakhstan: track income and expenses, plan budgets and savings goals, compare deposits, and get plain-language explanations of your finances. All amounts and dates are computed on the server, and the default currency is KZT (₸).
 
-**Статус:** ранняя стадия разработки. Этот README описывает целевое направление и правила разработки; он не означает, что все перечисленные функции уже реализованы.
+> **Status:** early release candidate (version `0.1.0`), intended for local use and a closed pilot. The [Roadmap and limitations](#14-roadmap-and-limitations) section lists what is not finished yet.
 
-## 1. Продуктовая идея
+## Table of contents
 
-BudgetAnalytics создаётся для людей, которым сложно оценить реальную стоимость кредитов, контролировать расходы и планировать погашение долгов.
+1. [Project overview](#1-project-overview)
+2. [Features](#2-features)
+3. [Technology stack](#3-technology-stack)
+4. [Architecture](#4-architecture)
+5. [Project structure](#5-project-structure)
+6. [Prerequisites](#6-prerequisites)
+7. [Quick start with Docker](#7-quick-start-with-docker)
+8. [Environment variables](#8-environment-variables)
+9. [Development without Docker](#9-development-without-docker)
+10. [Testing and code quality](#10-testing-and-code-quality)
+11. [API documentation](#11-api-documentation)
+12. [Security](#12-security)
+13. [Database management](#13-database-management)
+14. [Roadmap and limitations](#14-roadmap-and-limitations)
+15. [Contributing](#15-contributing)
+16. [License](#16-license)
 
-Главные принципы:
+---
 
-- Сначала финансовая устойчивость пользователя, а не продажа банковских продуктов.
-- Никакого давления взять новый кредит или инвестиционный продукт.
-- Аналитика, отчёты и помощь с погашением долгов бесплатны.
-- Платная подписка в будущем может открыть инвестиционные инструменты и соответствующие консультационные функции.
-- Все важные рекомендации объясняются понятным языком и сопровождаются расчётами, допущениями, датой данных и источниками.
-- Продукт не выдаёт себя за банк, кредитного брокера или лицензированного инвестиционного консультанта.
+## 1. Project overview
 
-## 2. Целевая аудитория и MVP
+**What it is.** A web application (Next.js frontend and FastAPI backend) where a user records their accounts and transactions, or imports bank statements. In return they get:
 
-Первая аудитория — жители Казахстана с потребительскими кредитами, рассрочками, кредитными картами или ипотекой, которым нужен понятный обзор личных финансов.
+- monthly cash flow, a savings rate and a category breakdown;
+- budget utilization and progress toward savings goals;
+- deposit income estimates;
+- a rule-based financial report.
 
-### Приоритет MVP
+**The problem it solves.** Bank apps show transactions but rarely answer practical questions:
 
-1. Стабильный backend API.
-2. Регистрация, вход и управление профилем.
-3. Импорт банковских выписок CSV/PDF с предварительным просмотром и защитой от дублей.
-4. Доходы, расходы, категории и аналитика.
-5. Ручное добавление долгов и графиков платежей.
-6. Проверяемые калькуляторы кредитов и стратегии погашения.
-7. Отчёты и базовые рекомендации на основе правил.
-8. AI Coach, который объясняет только подтверждённые данные и результаты инструментов.
+- "Where does my money go each month?"
+- "Am I about to exceed my food budget?"
+- "How much will this deposit really earn?"
 
-На первом этапе подключение банка означает импорт выписки или ручной ввод. Не просить у пользователя PIN, CVV, полный номер карты, пароль от банковского приложения или SMS-коды.
+BudgetAnalytics answers them with deterministic calculations. Money is always handled as exact decimals, never floating point.
 
-## 3. Технологический стек
+**Who it is for.** Individuals in Kazakhstan who manage their money in KZT; other currencies are supported per account. The interface is in Russian.
 
-Целевой стек backend:
+**Principles.**
 
-- Python 3.12+
-- FastAPI
-- Pydantic v2 / pydantic-settings
-- SQLAlchemy 2.x Async
-- PostgreSQL
-- Alembic
-- Redis и ARQ/Celery — только когда действительно нужны фоновые задачи
-- pytest, pytest-asyncio, HTTPX
-- Docker Compose для локальной разработки
-- OpenAI API на старте за provider abstraction
+- The product is not a bank, lender or broker, and it does not promise returns or approvals.
+- Financial numbers always come from the backend's calculations.
+- The optional AI layer only explains those numbers and is never the source of them.
 
-Фронтенд не входит в первый этап. Контракты API должны быть удобны для будущего Next.js + TypeScript клиента.
+**Short description (for GitHub):**
+*Personal finance assistant for Kazakhstan: budgets, cash-flow analytics, savings goals, deposit calculator and statement import. Next.js + FastAPI + PostgreSQL.*
 
-Версии библиотек фиксировать в lock-файле/манифесте. Не использовать выдуманные или неподтверждённые API и версии.
+## 2. Features
 
-## 4. Архитектурные правила
+Everything in this section is implemented and covered by automated tests, unless it is marked otherwise.
 
-### Слои
+### Authentication and user accounts
+- Registration, login and logout, plus logout from all devices.
+- Change password; this ends every session.
+- Short-lived access token plus refresh token. Refresh tokens rotate on every use, and reusing an old one revokes the whole session family.
+- The user profile includes a default currency (`KZT` unless set otherwise).
+- Rate limits on registration, login and token refresh.
+- **Not implemented:** password recovery by e-mail. The screen exists, but its button is disabled and labelled as requiring backend support.
 
-- `api/` — HTTP endpoints, dependency injection, auth и transport concerns.
-- `schemas/` — входные и выходные DTO, валидация.
-- `models/` — SQLAlchemy ORM модели.
-- `repo/` — запросы и persistence.
-- `services/` — бизнес-правила и use cases.
-- `services/finance/` — чистые финансовые расчёты без зависимости от HTTP/LLM.
-- `services/ai/` — provider adapter, orchestration, prompt templates и tool definitions.
-- `tasks/` — фоновые задачи.
-- `core/` — settings, database, security, logging.
-- `tests/` — unit, integration и API tests.
+### Accounts
+- Accounts store metadata only: name, type, currency, optional bank, opening balance and its date, and an archived flag.
+- Account types: `cash`, `current`, `card`, `savings`, `credit_card`, `other`.
+- Only the last 4 digits of a card may be stored; full card numbers are never accepted.
+- The balance is calculated by the backend from the opening balance and the transactions.
 
-Не смешивать SQL, бизнес-логику, HTTP и LLM вызовы в одном модуле. Не создавать абстракции без реальной необходимости.
+### Transactions
+- Types: `income`, `expense`, `refund`, `transfer_in`, `transfer_out`.
+- Create, edit and delete transactions; filter by period, type, category, account and bank; search the description; paginate.
+- Refunds reduce expenses and are not counted as income. Transfers between your own accounts are excluded from income and expenses.
 
-### Финансовая математика — только в коде
+### Categories
+- Separate income and expense categories (or both), with a set of default system categories and your own custom ones.
+- The backend rejects a category whose kind does not match the transaction type.
 
-LLM не вычисляет самостоятельно суммы, проценты, платежи, ГЭСВ, переплату, даты закрытия или сравнение стратегий.
+### Dashboard and analytics
+- Dashboard: current-month income, expenses, savings rate, cash-flow chart, expense breakdown by category, budgets of the month, key indicators and recent operations.
+- Analytics endpoints: summary, income, expenses, category breakdown, monthly series, period comparison, savings rate.
+- Periods are evaluated in the user's time zone (default `Asia/Almaty`), so month and day boundaries are correct for local time.
+- Cash flow is labelled as cash flow, not as an account balance.
 
-Все расчёты выполняются детерминированным Python-кодом с `Decimal`, явными правилами округления и тестами. LLM может объяснять результаты калькуляторов, но не менять их.
+### Budgets
+- A monthly limit per category.
+- Utilization comes from real transactions: `GET /api/v1/budgets/utilization` returns every budget in one call, for any month and time zone.
+- The UI shows a warning at 80 % and an "exceeded" state.
 
-Для каждого расчёта фиксировать:
+### Savings goals
+- A target amount and the amount already saved. The backend calculates progress, the remaining amount and the required monthly saving.
 
-- входные параметры;
-- валюту и единицы измерения;
-- метод/формулу;
-- допущения;
-- правила округления;
-- результат;
-- версию алгоритма.
+### Deposits
+- **Deposit calculator.** It supports these capitalization modes: none, monthly, quarterly and annual.
+- The backend states its calculation assumptions: nominal rate, ACT/365 day count, and simple interest for an incomplete final period.
+- **Saved deposits** have a bank, nominal rate and optional effective rate (ГЭСВ, kept as a separate field).
+- The overview shows total deposits and the expected income.
 
-Не называть номинальную ставку ГЭСВ. Не сравнивать предложения банков только по рекламной ставке. Комиссии, страхование, обязательные платежи и условия досрочного погашения учитывать, когда данные доступны. Если данных недостаточно — явно показать это.
+### Statement import
+- Upload `.csv` or `.xlsx` bank statements (PDF is rejected). The default limits are 5 MB and 5,000 rows.
+- The flow is preview → review rows → commit, so nothing is saved before you confirm.
+- Repeated imports are de-duplicated by row fingerprint, and possible duplicates of manually entered transactions are flagged.
+- Card-number-like sequences in imported descriptions are masked. There is an import history.
+- **Limitation:** the Kaspi, Halyk and Freedom column profiles are **unverified assumptions**, because no real anonymized statements were available. The API reports `verified: false` and the UI shows a warning.
 
-## 5. Финансовые модули
+### AI advisor and financial report
+- `POST /api/v1/advisor/ask` (a question) and `POST /api/v1/advisor/insights` (a structured report with observations, recommendations, risks, assumptions and missing data).
+- The advisor works from facts calculated by the backend; every answer shows its source and data freshness.
+- Answers and reports are not stored.
+- **Providers:**
+  - `AI_PROVIDER=none` (the default) gives deterministic rule-based answers, with no external calls.
+  - `AI_PROVIDER=openai` calls an OpenAI-compatible Chat Completions API through a provider adapter, with timeouts, retries and per-user token and cost limits.
+  - The `openai` mode has not been tested against a live provider in this repository.
 
-### Аналитика
+### Other
+- Light and dark themes; the layout adapts to phones, tablets and desktop.
+- A design-system page at `/design-system` (requires login).
+- **Not implemented:** notifications. The screen exists but is labelled as requiring backend support.
 
-Поддержать периоды: день, неделя, месяц, полгода, год и произвольный диапазон дат. Возвращать агрегаты, временной ряд, категории, top merchants и сравнение с предыдущим периодом.
+## 3. Technology stack
 
-Суммы и баланс не должны вводить пользователя в заблуждение: остаток по счёту нельзя подменять суммой доходов минус расходов за всё время.
+Versions are the ones pinned in the lock files (`frontend/pnpm-lock.yaml`, `backend/requirements*.txt`) or in the Docker images.
 
-### Долги
+| Area | Technology | Purpose | Version |
+|---|---|---|---|
+| Frontend | Next.js (App Router) | UI, server-side session handling (BFF), API proxy | 16.4.6 |
+| | React | UI library | 19.3.1 |
+| | TypeScript | Typed frontend code | 5.9.3 |
+| UI and styling | Tailwind CSS | Styling and design tokens | 4.3.5 |
+| | shadcn styles, tw-animate-css | Base component styles and animations | 4.23.0 / — |
+| | lucide-react | Icons | 1.75.0 |
+| | Recharts | Charts | 3.11.0 |
+| | next-themes | Light and dark theme | 0.4.6 |
+| | sonner | Toast notifications | 2.0.8 |
+| Data fetching | SWR | Client-side fetching and caching | 2.5.1 |
+| Backend | Python | Runtime | 3.12 |
+| | FastAPI | REST API (`/api/v1`, OpenAPI) | 0.163.2 |
+| | Uvicorn | ASGI server | 0.54.0 |
+| | Pydantic, pydantic-settings | Validation, settings from environment | 2.14.3 / 2.16.3 |
+| Database | PostgreSQL | Main data store | 16 (`postgres:16-alpine`) |
+| ORM and migrations | SQLAlchemy (async), asyncpg | Typed ORM, async driver | 2.1.9 / 0.32.0 |
+| | Alembic | Schema migrations | 1.20.1 |
+| Auth and security | PyJWT | Access and refresh tokens (HS256 by default) | 2.15.1 |
+| | pwdlib (Argon2, bcrypt) | Password hashing | 0.4.2 |
+| Cache / Redis | Redis, redis-py | Shared rate-limit counters | 7 (`redis:7-alpine`) / 8.1.0 |
+| Other backend | httpx | HTTP client for the LLM provider | 0.28.1 |
+| | openpyxl, defusedxml | Reading `.xlsx` statements safely | 3.1.5 / 0.7.1 |
+| Testing | pytest, pytest-asyncio | Backend unit, integration and migration tests | 9.2.0 / 1.5.0 |
+| | Vitest, Testing Library, jsdom | Frontend unit and component tests | 5.1.1 / 16.3.3 / 31.0.1 |
+| | Playwright | End-to-end tests against the real backend | 1.65.1 |
+| Code quality | Ruff, mypy, pip-audit | Python lint and format, types, dependency audit | 0.17.5 / 2.4.1 / 2.10.1 |
+| | ESLint, Prettier | Frontend lint and format | 10.15.0 / 3.10.1 |
+| Infrastructure | Docker, Docker Compose v2 | Local stack, images | — |
+| | GitHub Actions | Backend CI | — |
+| Package managers | pnpm, pip | Frontend and backend dependencies | 12.21.0 / — |
 
-Типы: потребительский кредит, рассрочка, кредитная карта, ипотека, автокредит, микрокредит и личный долг.
+## 4. Architecture
 
-Стратегии:
+```mermaid
+flowchart LR
+    user["Browser"]
 
-- Avalanche — дополнительные деньги направляются на долг с наибольшей эффективной стоимостью.
-- Snowball — на долг с наименьшим остатком.
-- Hybrid — только при прозрачном, документированном правиле приоритета.
+    subgraph compose["Docker Compose network"]
+        fe["frontend<br/>Next.js server (BFF)<br/>session in httpOnly cookies"]
+        api["api<br/>FastAPI /api/v1"]
+        migrate["migrate<br/>alembic upgrade head<br/>(runs once, then exits)"]
+        db[("db<br/>PostgreSQL 16")]
+        redis[("redis<br/>Redis 7<br/>rate-limit counters")]
+    end
 
-Симуляция должна начислять проценты, учитывать минимальные платежи, распределять дополнительные платежи, освобождать платёж после закрытия долга и корректно обрабатывать последний платёж. Не обещать экономию, если параметры неполные или модель не учитывает комиссии/штрафы.
+    llm["OpenAI-compatible API<br/>(optional)"]
 
-### AI Coach
+    user -- "http://localhost:3000" --> fe
+    fe -- "Bearer token<br/>http://api:8000" --> api
+    migrate --> db
+    api --> db
+    api --> redis
+    api -. "only if AI_PROVIDER=openai" .-> llm
+```
 
-AI Coach должен:
+| Service | Responsibility |
+|---|---|
+| `frontend` | Renders the UI and acts as a **backend-for-frontend (BFF)**. Login, registration and logout go to `/api/session/*`, which stores the tokens in httpOnly cookies. Every other call goes to `/api/v1/*` on the same origin; the Next.js server adds the access token and forwards it to the API. Browser JavaScript never sees tokens. If the API answers 401, the server refreshes the token once and retries. A route guard (`frontend/proxy.ts`) sends unauthenticated visitors to `/login`. |
+| `api` | Business logic and all financial calculations (exact decimals), user-scoped data access, validation, rate limiting and the AI advisor. |
+| `migrate` | Runs `alembic upgrade head` on every start, before the API starts. |
+| `db` | PostgreSQL with a persistent volume. |
+| `redis` | Rate-limit counters shared by all API workers. Nothing is persisted. |
 
-- объяснять финансовое положение простым русским языком;
-- задавать уточняющий вопрос, если критически не хватает данных;
-- использовать backend tools для профиля, расходов, долгов и калькуляторов;
-- отделять факты, допущения и рекомендации;
-- указывать дату и источник рыночных данных;
-- объяснять риски и альтернативы;
-- не рекомендовать новый кредит при превышении настроенного порога долговой нагрузки;
-- не выдавать инвестиционный совет за гарантированный результат.
+**Request flow:** browser → `frontend:3000` (`/api/v1/...`) → `api:8000` (`/api/v1/...`) → PostgreSQL. The browser never calls the API directly, so CORS is not needed in this setup.
 
-AI не должен получать ФИО, ИИН, полный номер карты/счёта, пароли, токены или необработанные документы без необходимости. Перед LLM передавать минимальные обезличенные данные.
+**Startup order (enforced by health checks):** `db` healthy → `migrate` exits successfully → `redis` healthy → `api` healthy (`/health/ready` checks the database and Redis) → `frontend` starts.
 
-## 6. LLM provider strategy
+**Production layout.** Production uses a separate file, [`backend/docker-compose.prod.yml`](backend/docker-compose.prod.yml), with secrets as files and read-only containers; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). It covers the API, PostgreSQL and Redis; the frontend is not part of it yet.
 
-Начать с OpenAI API через внутренний интерфейс провайдера, например `LLMProvider`. Конкретная модель задаётся конфигурацией, а не зашивается по всему коду.
+## 5. Project structure
 
-Требования:
+```text
+BudgetAnalytics/
+├── compose.yaml               # Full local stack: frontend, api, migrate, db, redis
+├── compose.dev-ports.yaml     # Optional: publish PostgreSQL/Redis on 127.0.0.1
+├── .env.example               # Settings for compose.yaml (copy to .env)
+├── backend/
+│   ├── app/
+│   │   ├── api/               # FastAPI routers (HTTP layer only)
+│   │   ├── core/              # Settings, security, errors, rate limiting, logging
+│   │   ├── models/            # SQLAlchemy models
+│   │   ├── schemas/           # Pydantic request/response models
+│   │   ├── repositories/      # Data access
+│   │   ├── services/          # Business logic: finance engine, analytics, imports, AI
+│   │   └── integrations/llm/  # LLM provider adapter (OpenAI-compatible)
+│   ├── alembic/versions/      # Database migrations
+│   ├── tests/                 # unit/, integration/, migrations/
+│   ├── scripts/               # backup.sh, restore.sh
+│   ├── Dockerfile             # API image (also used by the migrate service)
+│   ├── docker-compose.yml     # Backend-only dev stack (PostgreSQL + API)
+│   ├── docker-compose.prod.yml
+│   ├── pyproject.toml         # Direct dependencies, tool settings
+│   ├── requirements.txt       # Hash-pinned runtime lock
+│   ├── requirements-dev.txt   # Hash-pinned dev lock
+│   └── .env.example           # Settings for running the backend on the host
+├── frontend/
+│   ├── app/                   # Next.js routes (pages) and route handlers
+│   │   └── api/               # BFF: session/[action] and the v1/[...path] proxy
+│   ├── components/            # Screens and UI components
+│   ├── lib/                   # API client, SWR hooks, errors, formatting, time zones
+│   │   └── server/            # Server-only session and proxy helpers
+│   ├── e2e/                   # Playwright tests and backend launcher for E2E
+│   ├── proxy.ts               # Route guard (redirect to /login)
+│   ├── Dockerfile             # Frontend image
+│   ├── package.json, pnpm-lock.yaml
+│   └── .env.example           # BACKEND_URL for running the frontend on the host
+├── docs/
+│   ├── DOCKER_COMPOSE.md      # Docker details and troubleshooting
+│   ├── DEPLOYMENT.md          # Production deployment, rollback, backups
+│   ├── SECURITY_REVIEW.md
+│   ├── design/                # Product and design specifications
+│   └── implementation/        # Audit, implementation status, QA report
+├── .github/workflows/ci.yml   # Backend CI
+└── CLAUDE.md                  # Engineering rules for contributors and AI assistants
+```
 
-- provider adapter и единый контракт;
-- таймауты, ограниченные retries и обработка rate limits;
-- структурированный вывод с Pydantic validation;
-- tool allowlist и проверка аргументов;
-- лимиты токенов, запросов и стоимости на пользователя;
-- логирование usage без записи чувствительного содержимого;
-- fallback на rule-based advice при недоступности LLM;
-- возможность добавить Anthropic или Gemini без переписывания финансовых сервисов.
+## 6. Prerequisites
 
-Модель не является источником финансовых ставок. Источник — проверяемые данные с URL и датой обновления.
+| Tool | Needed for | Notes |
+|---|---|---|
+| Git | Cloning the repository | Any recent version |
+| Docker Desktop (Windows/macOS) or Docker Engine (Linux) | Running the stack | Must be running before `docker compose` commands |
+| Docker Compose v2 | `docker compose ...` commands | Included in Docker Desktop. Check with `docker compose version`. The legacy `docker-compose` v1 is not supported. |
+| Python 3.12+ | Optional: backend without Docker | |
+| Node.js 22+ and pnpm 12.21.0 | Optional: frontend without Docker | The pnpm version is pinned in `frontend/package.json` (`packageManager`) |
 
-## 7. Безопасность и приватность
+**Windows with WSL 2:** enable *Docker Desktop → Settings → Resources → WSL integration* for your distribution, then run the commands inside WSL.
 
-- Никогда не хранить PAN, CVV, PIN, банковские логины/пароли и OTP.
-- Не логировать access/refresh tokens, секреты, ИИН и содержимое банковских выписок.
-- Access token короткоживущий; refresh token — безопасное хранение, ротация и отзыв.
-- Пароли хранить только в виде современного password hash.
-- CORS — только разрешённые origin.
-- Rate limit на login, upload и AI endpoints.
-- Ограничить размер файла, MIME/type и число строк; безопасно обрабатывать PDF/CSV.
-- Все пользовательские запросы к БД должны быть ограничены текущим `user_id` (защита от IDOR).
-- Шифровать чувствительные поля и резервные копии; управлять ключами отдельно от БД.
-- Удаление аккаунта должно удалять или необратимо обезличивать связанные данные.
-- Получать явное согласие на обработку персональных данных.
-- Проверить с юристом требования законодательства РК, трансграничную передачу и локализацию данных до публичного запуска. Не считать техническую заметку юридическим заключением.
+## 7. Quick start with Docker
 
-## 8. API conventions
-
-- Версионирование: `/api/v1`.
-- REST endpoints с единым форматом ошибок.
-- Pydantic request/response schemas.
-- Pagination для списков.
-- UTC для хранения timestamps; timezone пользователя учитывать при календарях.
-- Денежные значения сериализовать без потери точности (предпочтительно decimal string в API).
-- OpenAPI schema — контракт для будущего frontend.
-- Не возвращать ORM объекты напрямую.
-
-Предполагаемые домены API:
-
-- `/auth`
-- `/users`
-- `/transactions`
-- `/cards`
-- `/imports`
-- `/analytics`
-- `/budgets`
-- `/debts`
-- `/assistant`
-- `/products`
-- `/reports`
-
-Публичные контракты уточнять по фактической реализации и тестам, не считать этот список уже реализованным.
-
-Реализовано сейчас (полный контракт — `/openapi.json`): `/auth`, `/categories` (тип `income`/`expense`/`any`, фильтр `?kind=`), `/accounts`, `/banks` (справочник, засеян миграцией), `/goals` (финансовые цели с расчётом прогресса), `/transactions`, `/budgets`, `/deposits` (+ калькулятор), `/analytics`, `/dashboard/overview`, `/advisor`, `/imports`.
-
-## 9. Разработка и запуск
-
-Все команды выполняются из каталога `backend/`. Нужны Python 3.12+ и Docker (для PostgreSQL).
-
-Файлы:
-
-- `pyproject.toml` — прямые зависимости и настройки pytest/ruff;
-- `requirements.txt` / `requirements-dev.txt` — lock-файлы с точными версиями и хешами (генерируются командой из `pyproject.toml`);
-- `.env.example` — все настройки с безопасными заглушками;
-- `alembic/` — миграции (схема БД управляется только ими);
-- `Dockerfile`, `docker-compose.yml` — PostgreSQL, миграции и API.
-
-Локальный запуск (API на хосте, PostgreSQL в Docker):
+### 1. Clone the repository and enter it
 
 ```bash
-cp .env.example .env          # задать POSTGRES_PASSWORD и SECRET_KEY
-docker compose up -d db
-python -m venv .venv && . .venv/bin/activate
+git clone https://github.com/BatyrAman/BudgetAnalytics.git
+cd BudgetAnalytics
+```
+
+### 2. Create the root `.env`
+
+```bash
+cp .env.example .env
+```
+
+This copies the template for the **root** `compose.yaml`. `.env` is git-ignored.
+
+### 3. Set the three required values
+
+Generate a random value for each secret:
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+Run it three times and put the results in `.env`:
+
+```dotenv
+POSTGRES_PASSWORD=<random value 1>
+REDIS_PASSWORD=<random value 2>
+SECRET_KEY=<random value 3>
+```
+
+- The passwords are inserted into connection URLs, so use only letters, digits, `-` and `_`. `token_urlsafe` produces exactly that.
+- `SECRET_KEY` signs the login tokens and must be at least 32 characters long.
+
+### 4. Build and start everything
+
+```bash
+docker compose up -d --build
+```
+
+This builds the `api` and `frontend` images and starts PostgreSQL and Redis. It then **applies the database migrations automatically** (the `migrate` service), starts the API once it is healthy, and finally starts the frontend. The first build downloads dependencies and takes several minutes.
+
+### 5. Check the status
+
+```bash
+docker compose ps
+```
+
+`db`, `redis`, `api` and `frontend` should show `running` and `healthy`. `migrate` is not listed while running: it finishes with exit code 0 and stops. Use `docker compose ps -a` to see it.
+
+### 6. Open the application
+
+| What | URL |
+|---|---|
+| Web application | <http://localhost:3000> |
+| API documentation (Swagger UI) | <http://127.0.0.1:8000/docs> |
+| OpenAPI schema | <http://127.0.0.1:8000/openapi.json> |
+| API liveness / readiness | <http://127.0.0.1:8000/health> / <http://127.0.0.1:8000/health/ready> |
+
+Use `http://localhost:3000`, not an IP address. The session cookies are marked `Secure`, and browsers accept them over plain HTTP only on `localhost`.
+
+Both ports are bound to `127.0.0.1` only. PostgreSQL and Redis are not reachable from the host at all; see [Database management](#13-database-management).
+
+### Everyday commands
+
+```bash
+docker compose logs -f                  # follow logs of all services
+docker compose logs -f api frontend     # follow selected services
+docker compose restart api              # restart one service
+docker compose up -d --build frontend   # rebuild and restart after code changes
+docker compose stop                     # stop containers, keep them
+docker compose down                     # stop and remove containers; data is kept
+```
+
+### Migrations
+
+Migrations run automatically on every `docker compose up`. To inspect or run them by hand:
+
+```bash
+docker compose logs migrate                        # output of the last run
+docker compose exec api alembic current            # revision of the database
+docker compose exec api alembic heads              # latest revision in the code
+docker compose run --rm migrate                    # apply migrations now (upgrade head)
+```
+
+### Troubleshooting
+
+| Symptom | Cause and fix |
+|---|---|
+| `Cannot connect to the Docker daemon` or `docker: command not found` | Docker is not running, or WSL integration is off. Start Docker Desktop (or `sudo systemctl start docker` on Linux) and retry. |
+| `required variable SECRET_KEY is missing a value` (or `POSTGRES_PASSWORD`, `REDIS_PASSWORD`) | `.env` is missing or incomplete. Run `cp .env.example .env` and fill in the three values. |
+| `port is already allocated` / `address already in use` | Port 3000 or 8000 is taken. Set `FRONTEND_HOST_PORT` or `API_HOST_PORT` in `.env`, then run `docker compose up -d` again. |
+| `migrate` exits with `password authentication failed` | PostgreSQL applies `POSTGRES_PASSWORD` **only when the data volume is first created**. An existing volume keeps its original password, so put that password back in `.env`. Do not delete the volume to "fix" this: that erases all data. |
+| `migrate` exits with another error | Read it with `docker compose logs migrate`. Fix the cause, then run `docker compose up -d` again (migrations are re-run). `api` does not start until `migrate` succeeds. |
+| `api` is `unhealthy` | `curl http://127.0.0.1:8000/health/ready` shows whether `database` or `rate_limit_store` (Redis) is unavailable; `docker compose logs api` shows the error. |
+| The web app shows errors or 5xx on every action | The frontend cannot reach the API. Check `docker compose ps api` and `docker compose logs frontend`. Inside Docker the frontend uses `BACKEND_URL=http://api:8000`. |
+| After login you are sent back to the login page | The page was opened via an IP or another host name. Open `http://localhost:3000`. |
+| `Pool overlaps with other one on this address space` | The internal subnet `172.31.250.0/24` overlaps a local network. Change `COMPOSE_SUBNET` and `FRONTEND_IPV4` together in `.env`. |
+| `429` / "Слишком много попыток" | Rate limit reached (for example, 10 registrations per hour per IP). Wait, or reset the counters with `docker compose restart redis`. |
+
+More details: [docs/DOCKER_COMPOSE.md](docs/DOCKER_COMPOSE.md).
+
+## 8. Environment variables
+
+### Root `.env` (used by `compose.yaml`)
+
+| Variable | Purpose | Required | Example / default |
+|---|---|---|---|
+| `POSTGRES_PASSWORD` | PostgreSQL password (applied when the volume is first created) | **Yes** | `<random, URL-safe>` |
+| `REDIS_PASSWORD` | Redis password | **Yes** | `<random, URL-safe>` |
+| `SECRET_KEY` | Signing key for JWT tokens, at least 32 characters | **Yes** | `<random, 32+ chars>` |
+| `POSTGRES_USER` | PostgreSQL user | No | `budget` |
+| `POSTGRES_DB` | PostgreSQL database | No | `budget` |
+| `ENVIRONMENT` | `development` enables `/docs`. Keep `development` for this stack; production uses a different setup. | No | `development` |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` | No | `INFO` |
+| `LOG_JSON` | One JSON object per log line | No | `true` |
+| `AI_PROVIDER` | `none` (rule-based) or `openai` | No | `none` |
+| `OPENAI_API_KEY` | Required only when `AI_PROVIDER=openai` | No | *(empty)* |
+| `CORS_ORIGINS` | JSON list of allowed browser origins. Not needed with the BFF. | No | `[]` |
+| `FRONTEND_HOST_PORT` | Host port of the web app (127.0.0.1) | No | `3000` |
+| `API_HOST_PORT` | Host port of the API (127.0.0.1) | No | `8000` |
+| `POSTGRES_HOST_PORT` | Host port for PostgreSQL, only with `compose.dev-ports.yaml` | No | `5432` |
+| `REDIS_HOST_PORT` | Host port for Redis, only with `compose.dev-ports.yaml` | No | `6379` |
+| `COMPOSE_SUBNET` | Internal network subnet | No | `172.31.250.0/24` |
+| `FRONTEND_IPV4` | Fixed frontend address inside that subnet. The API trusts `X-Forwarded-For` only from it. | No | `172.31.250.10` |
+
+Compose builds `DATABASE_URL`, `REDIS_URL` and `BACKEND_URL` for the containers from these values, so you do not set them yourself.
+
+**Generating a `SECRET_KEY`:**
+
+```bash
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+### Root `.env` vs. other environment files
+
+| File | Used by | When |
+|---|---|---|
+| `.env` (root, from `.env.example`) | `compose.yaml` | The standard Docker setup |
+| `backend/.env` (from `backend/.env.example`) | The backend's settings loader and `backend/docker-compose.yml` | Running the API on the host, or the backend-only stack. It lists every backend setting: token lifetimes, import limits, AI model and limits, and so on. |
+| `frontend/.env.local` (from `frontend/.env.example`) | `next dev` / `next start` on the host | Running the frontend on the host. It contains only `BACKEND_URL`. |
+
+The root `compose.yaml` passes only the variables listed above to the containers. Other backend settings (for example `AI_MODEL` or `IMPORT_MAX_FILE_BYTES`) use their defaults in the Docker stack.
+
+> Never commit `.env` files, passwords, API keys or tokens. All `.env*` files except `.env.example` are git-ignored.
+
+## 9. Development without Docker
+
+Running the API and the frontend on the host is supported. PostgreSQL is still required, and Redis is optional (only for shared rate limits). The simplest way to get both is from the root stack, published on `127.0.0.1`:
+
+```bash
+docker compose -f compose.yaml -f compose.dev-ports.yaml up -d db redis
+```
+
+Alternatively, use your own PostgreSQL 16 server.
+
+### Backend (Python 3.12+)
+
+```bash
+cd backend
+python3 -m venv .venv
+. .venv/bin/activate
 pip install --require-hashes -r requirements-dev.txt
+cp .env.example .env
+```
+
+In `backend/.env`, set `SECRET_KEY` and point `DATABASE_URL` at your database. With the command above that is `postgresql+asyncpg://budget:<POSTGRES_PASSWORD from the root .env>@localhost:5432/budget`. Then run:
+
+```bash
 alembic upgrade head
 uvicorn app.main:app --reload --no-access-log
 ```
 
-Всё в Docker (PostgreSQL → миграции → API на `127.0.0.1:8000`):
+The API runs on <http://127.0.0.1:8000>. By default `RATE_LIMIT_BACKEND=memory`, which is fine for a single development process.
+
+### Frontend (Node.js 22+, pnpm 12.21.0)
 
 ```bash
-docker compose up --build
+cd frontend
+corepack enable            # or: npm install -g pnpm@12.21.0
+pnpm install
+cp .env.example .env.local # BACKEND_URL=http://127.0.0.1:8000
+pnpm dev
 ```
 
-Проверки:
+The app runs on <http://localhost:3000>. In development mode the session cookies are not marked `Secure`.
+
+> Do not run `backend/docker-compose.yml` and the root `compose.yaml` at the same time. They share the Compose project name `budgetanalytics`, the containers `db`, `migrate` and `api`, and the data volume.
+
+## 10. Testing and code quality
+
+### Backend (run from `backend/` with the virtual environment active)
+
+| Command | What it checks |
+|---|---|
+| `pytest -q` | Unit tests. Integration and migration tests are skipped unless the database variables below are set. |
+| `ruff check .` | Lint |
+| `ruff format --check app tests` | Formatting (as in CI) |
+| `mypy` | Static types (configured in `pyproject.toml`) |
+| `pip-audit -r requirements.txt --require-hashes --disable-pip` | Known vulnerabilities in dependencies |
+
+Integration tests need a dedicated test database. Its tables are cleared after each test, so never point it at real data.
 
 ```bash
-pytest -q                                   # unit; integration пропускаются без БД
-TEST_DATABASE_URL=postgresql+asyncpg://budget:<password>@localhost:5432/budget_test pytest -q
-ruff check .
+TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/budget_test \
+MIGRATION_TEST_DATABASE_URL=postgresql+asyncpg://<user>:<password>@localhost:5432/budget_migrations \
+REDIS_TEST_URL=redis://:<password>@localhost:6379/0 \
+pytest -q
 ```
 
-`TEST_DATABASE_URL` должен указывать на отдельную тестовую БД: после каждого теста её таблицы очищаются.
+### Frontend (run from `frontend/`)
 
-Эндпоинты: `/health` (liveness), `/health/ready` (проверка БД), API под `/api/v1`, документация `/docs` (выключена в `ENVIRONMENT=production`, если не задан `DOCS_ENABLED=true`).
+| Command | What it checks |
+|---|---|
+| `pnpm test` | Unit and component tests (Vitest) |
+| `pnpm typecheck` | TypeScript (`tsc --noEmit`) |
+| `pnpm lint` | ESLint |
+| `pnpm format:check` | Prettier (`pnpm format` fixes) |
+| `pnpm build` | Production build. Type errors fail the build. |
+| `pnpm test:e2e` | Playwright end-to-end tests against a real backend (see below) |
 
-Redis нужен в production для общих счётчиков rate limiting (в разработке — счётчики в памяти).
+End-to-end tests use a separate, disposable database. They start the backend with `e2e/start-backend.sh` (port 8100) and the production frontend build on port 3100:
 
-Production-развёртывание, откат и бэкапы: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). Ревью безопасности и чек-лист готовности: [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md).
+```bash
+npx playwright install chromium
+```
+```bash
+E2E_DATABASE_URL=postgresql+asyncpg://<user>:<password>@127.0.0.1:5432/budget_e2e e2e/start-backend.sh &
+```
+```bash
+BACKEND_URL=http://127.0.0.1:8100 pnpm build
+```
+```bash
+pnpm test:e2e
+```
 
-## 10. Roadmap
+### Continuous integration
 
-### Phase 0 — Stabilization
-Исправить запуск, согласовать async database stack, оставить один `Base`, добавить migrations, env example, Docker, lint и тестовый каркас.
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main` and on pull requests. It covers the **backend only**:
 
-### Phase 1 — Data foundation
-Пользователи, транзакции, карты как метаданные, импорт выписок, дедупликация, категории и ownership checks.
+- Ruff and mypy;
+- a migration round trip (upgrade, drift check, downgrade, upgrade);
+- pytest with PostgreSQL and Redis;
+- `pip-audit`;
+- a Docker image smoke test.
 
-### Phase 2 — Analytics
-Агрегирующие запросы, временные периоды, сравнения и точные денежные типы.
+Frontend checks are not in CI yet; run them locally.
 
-### Phase 3 — Debt engine
-Модели долгов и платежей, аннуитет/дифференцированный график, avalanche/snowball, досрочное погашение и календарь.
+## 11. API documentation
 
-### Phase 4 — AI Coach
-Provider abstraction, tools, rule-based fallback, privacy filtering, usage budgets, structured response и tests.
+| Item | Value |
+|---|---|
+| Base URL (Docker) | `http://127.0.0.1:8000/api/v1` |
+| Swagger UI | `http://127.0.0.1:8000/docs` (enabled when `ENVIRONMENT` is not `production`, or when `DOCS_ENABLED=true`) |
+| OpenAPI schema | `http://127.0.0.1:8000/openapi.json` |
+| Health | `/health` (liveness), `/health/ready` (database and Redis) |
 
-### Phase 5 — Beta readiness
-Security review, monitoring, backups, privacy/legal review, load tests и пилотная группа.
+**Authentication.**
 
-Frontend — отдельный этап после стабилизации API. Рекомендуемый вариант: Next.js + TypeScript; визуализация — Recharts или аналог после проверки актуальной совместимости.
+- `POST /api/v1/auth/login` (JSON) returns an access token and a refresh token. Send the access token as `Authorization: Bearer <token>`.
+- Swagger's *Authorize* button uses the OAuth2 password flow at `/api/v1/auth/token`.
+- `POST /api/v1/auth/refresh` rotates the refresh token.
+- The web app never exposes tokens to the browser: its server keeps them in cookies and calls the API for you.
 
-## 11. Definition of Done
+**Error format.** Every error has the form `{"detail": "...", "code": "...", "request_id": "..."}`.
 
-Задача не считается завершённой, пока:
+- `code` is a stable machine-readable code, for example `invalid_credentials`, `category_kind_mismatch` or `budget_not_found`.
+- `detail` is English text for developers; the UI translates errors by `code`.
 
-1. Код соответствует существующей архитектуре и стилю проекта.
-2. Есть тесты для happy path, edge cases и ошибок.
-3. Проверены tenant isolation и права доступа.
-4. Финансовые расчёты имеют тесты на граничные значения.
-5. Добавлены/обновлены миграции при изменении схемы.
-6. Обновлены API schemas и документация.
-7. Нет секретов и персональных данных в логах.
-8. Запущены formatter, linter и тесты.
-9. В отчёте указано, что реально проверено и что осталось.
+**Resources:** `auth`, `accounts`, `banks`, `categories`, `transactions`, `budgets`, `goals`, `deposits`, `analytics`, `dashboard/overview`, `advisor`, `imports`.
 
-## 12. Product principles
+Older deprecated endpoints are still included when `ENABLE_LEGACY_API` is enabled, which is the default outside production. They are marked *deprecated* in the schema and should not be used for new code.
 
-BudgetAnalytics должен помогать пользователю избежать финансовых ошибок, а не подталкивать его к новым обязательствам. Если наиболее разумный вывод — не брать кредит, сократить расходы или сначала создать резерв, продукт должен прямо и уважительно это сказать.
-"""
+## 12. Security
+
+Implemented measures:
+
+- **Passwords:** hashed with Argon2; bcrypt is kept only to verify older hashes. Login failures return a generic error.
+- **Tokens:** short-lived access JWTs (30 minutes by default) and refresh JWTs (7 days). Refresh tokens are tracked on the server, rotate on every use, and a reused token revokes the whole family. Changing the password and "log out everywhere" revoke all sessions.
+- **Web session (BFF):** tokens live only in `httpOnly`, `SameSite=Strict` cookies, which are also `Secure` in production builds. The proxy refuses token endpoints and accepts only plain path segments, so tokens cannot be obtained by browser JavaScript.
+- **CSRF:** state-changing requests through the frontend must carry `X-Requested-With: fetch` and pass a same-origin check, in addition to `SameSite=Strict`.
+- **Browser headers:**
+  - Content-Security-Policy (`default-src 'self'`, `frame-ancestors 'none'`, `object-src 'none'`);
+  - `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`;
+  - HSTS, Referrer-Policy and Permissions-Policy.
+  - Note: scripts are allowed `'unsafe-inline'`, which Next.js needs without a nonce setup.
+- **CORS:** not needed with the BFF (empty by default in Docker); `*` is rejected in production.
+- **Authorization:** every user-owned record is read and changed only within the authenticated user's scope. Requests for another user's records return `404`.
+- **Input validation:**
+  - Pydantic schemas on every endpoint;
+  - a request size limit (1 MiB by default);
+  - statement uploads checked by type and size, with hardened XLSX parsing (`defusedxml`);
+  - only the last 4 digits of a card may be stored, and card-like numbers in imported text are masked.
+- **Rate limiting:** login (20 per minute per IP, 10 per 15 minutes per account), registration (10 per hour per IP), token refresh, imports and AI requests. Redis is used in Docker and is required in production.
+- **Containers:** the API image runs as a non-root user. PostgreSQL and Redis are not published on the host, and the published ports bind to `127.0.0.1`.
+- **Secrets:** read from environment variables (files in production). Production settings refuse a missing or weak `SECRET_KEY`.
+
+Further reading: [docs/SECURITY_REVIEW.md](docs/SECURITY_REVIEW.md) and [docs/implementation/QA_REPORT.md](docs/implementation/QA_REPORT.md).
+
+> **Never commit `.env` files, credentials, API keys or real financial data.** Use anonymized data for tests and samples.
+
+## 13. Database management
+
+- **Database:** PostgreSQL 16. In Docker, data lives in the named volume `budgetanalytics_pgdata`.
+- **Migrations:** the schema is managed only by Alembic (`backend/alembic/versions/`). In Docker they run automatically before the API starts.
+
+Inspect and run migrations:
+
+```bash
+docker compose exec api alembic current     # applied revision
+docker compose exec api alembic heads       # newest revision in code
+docker compose exec api alembic history     # all revisions
+docker compose run --rm migrate             # apply pending migrations
+```
+
+Connect with `psql` inside the container:
+
+```bash
+docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+```
+
+To reach PostgreSQL or Redis from host tools, start the stack with `compose.dev-ports.yaml` (binds to `127.0.0.1` only):
+
+```bash
+docker compose -f compose.yaml -f compose.dev-ports.yaml up -d
+```
+
+### Backup and restore
+
+A quick local backup in PostgreSQL's custom format:
+
+```bash
+docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -Fc "$POSTGRES_DB"' > budget-backup.dump
+```
+
+The dump contains personal financial data. Store it securely and never commit it (`*.dump` is git-ignored).
+
+For encrypted backups and safe restores into an empty database, use [`backend/scripts/backup.sh`](backend/scripts/backup.sh) and [`backend/scripts/restore.sh`](backend/scripts/restore.sh). They need `pg_dump`/`psql` on the host and `age` for encryption; see [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+
+### Stopping vs. deleting data
+
+| Command | Containers | Data volume |
+|---|---|---|
+| `docker compose stop` | Stopped, kept | Kept |
+| `docker compose down` | Removed | **Kept** |
+| `docker compose down -v` | Removed | **Deleted, including all data. Avoid it unless you really want to start from scratch.** |
+
+## 14. Roadmap and limitations
+
+Known limitations of the current version:
+
+- **Password recovery** and **notifications** are not implemented; the UI marks them as unavailable.
+- **Bank statement profiles** (Kaspi, Halyk, Freedom) are unverified assumptions until they are tuned with real anonymized samples.
+- **The `openai` advisor mode** has not been tested against a live provider. The default rule-based mode is tested. Some rule-based report texts come from the backend in English.
+- **Scheduled monthly reports:** `backend/app/tasks/` contains only empty placeholder modules.
+- **Production deployment** (`backend/docker-compose.prod.yml`) covers only the API, PostgreSQL and Redis; the frontend is not included yet.
+- **CI** checks only the backend.
+- **The interface** is in Russian only (the Kazakh and English options are disabled).
+
+Planned direction from the product documents in [`docs/design/`](docs/design) and [`CLAUDE.md`](CLAUDE.md):
+
+- a debt engine (repayment schedules, avalanche/snowball strategies);
+- a fuller AI coach;
+- beta-readiness work: legal and privacy review, monitoring, backups and load tests.
+
+These are not commitments or dates.
+
+## 15. Contributing
+
+1. Create a branch from `main`:
+   ```bash
+   git checkout -b feature/short-description
+   ```
+2. Make a small, focused change. Follow [`CLAUDE.md`](CLAUDE.md): exact decimals for money, business logic in services, every query scoped to the current user.
+3. Add or update tests, then run the checks:
+   ```bash
+   cd backend && ruff check . && ruff format --check app tests && mypy && pytest -q
+   ```
+   ```bash
+   cd frontend && pnpm format:check && pnpm typecheck && pnpm lint && pnpm test && pnpm build
+   ```
+4. Push the branch and open a pull request that describes the change and the checks you ran.
+
+## 16. License
+
+No license has been specified yet. Until one is added, all rights are reserved by the authors; ask the repository owner before reusing the code.
