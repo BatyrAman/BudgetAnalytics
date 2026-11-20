@@ -33,7 +33,7 @@ class TransactionService:
     async def get(self, transaction_id: int, user_id: int) -> Transaction:
         transaction = await self.transactions.get_for_user(transaction_id, user_id)
         if transaction is None:
-            raise NotFoundError("Transaction not found")
+            raise NotFoundError("Transaction not found", code="transaction_not_found")
         return transaction
 
     async def list(
@@ -48,16 +48,17 @@ class TransactionService:
         # Another user's private category is reported exactly like a missing one.
         category = await CategoryRepository(self.db).get_visible(category_id, user_id)
         if category is None:
-            raise AppError("Category not found")
+            raise AppError("Category not found", code="category_not_found")
         if transaction_type is not None and not category_allows(category.kind, transaction_type):
             raise AppError(
                 f"Category '{category.name}' ({category.kind.value}) cannot be used "
-                f"for a {transaction_type.value} transaction"
+                f"for a {transaction_type.value} transaction",
+                code="category_kind_mismatch",
             )
 
     async def _check_bank(self, bank_id: int | None) -> None:
         if bank_id is not None and await self.db.get(Bank, bank_id) is None:
-            raise AppError("Bank not found")
+            raise AppError("Bank not found", code="bank_not_found")
 
     async def _resolve_currency(
         self, user: User, account_id: int | None, requested: str | None
@@ -65,13 +66,15 @@ class TransactionService:
         if account_id is not None:
             account = await AccountRepository(self.db).get_for_user(account_id, user.id)
             if account is None:
-                raise AppError("Account not found")
+                raise AppError("Account not found", code="account_not_found")
             if requested is not None and requested != account.currency_code:
-                raise AppError("Currency must match the account's currency")
+                raise AppError(
+                    "Currency must match the account's currency", code="currency_mismatch"
+                )
             return account.currency_code
         currency = requested or user.default_currency_code
         if await CurrencyRepository(self.db).get(currency) is None:
-            raise AppError("Unknown currency")
+            raise AppError("Unknown currency", code="unknown_currency")
         return currency
 
     # ------------------------------------------------------------ commands

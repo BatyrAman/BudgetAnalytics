@@ -1,0 +1,37 @@
+/* Feature styles for the transactions screens; only existing design tokens are used. */
+.transactions-field-error {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--text-negative);
+}
+.transactions-type-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.transactions-type-fieldset legend {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.transactions-currency-locked {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.filter-presets button[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  font-weight: 600;
+}
+.import-bank-card small.verified {
+  color: var(--text-positive);
+}
+.import-row-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}

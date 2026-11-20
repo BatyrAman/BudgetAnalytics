@@ -1,0 +1,64 @@
+/* AC-1 / AC-2 Счета — feature-specific styles (existing design tokens only). */
+.group-total-error {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.account-transactions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.account-transactions li {
+  border-bottom: 1px solid var(--border);
+}
+
+.account-transactions li:last-child {
+  border-bottom: none;
+}
+
+.account-transactions a {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 12px 4px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.account-transactions a:hover {
+  background: var(--surface-hover);
+}
+
+.account-transactions a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.account-transactions .tx-meta {
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.account-transactions .tx-amount {
+  grid-row: span 2;
+  align-self: center;
+  text-align: right;
+}
+
+.account-transactions-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 12px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.account-transactions-footer div {
+  display: flex;
+  gap: 8px;
+}

@@ -32,13 +32,15 @@ class CategoryService:
     async def get(self, category_id: int, user_id: int) -> Category:
         category = await self.categories.get_visible(category_id, user_id)
         if category is None:
-            raise NotFoundError("Category not found")
+            raise NotFoundError("Category not found", code="category_not_found")
         return category
 
     async def _get_own(self, category_id: int, user_id: int) -> Category:
         category = await self.get(category_id, user_id)
         if category.user_id is None:
-            raise PermissionDeniedError("System categories are read-only")
+            raise PermissionDeniedError(
+                "System categories are read-only", code="system_category_readonly"
+            )
         return category
 
     async def _ensure_name_free(
@@ -46,7 +48,7 @@ class CategoryService:
     ) -> None:
         existing = await self.categories.get_visible_by_name(name, user_id)
         if existing is not None and existing.id != exclude_id:
-            raise ConflictError("Category already exists")
+            raise ConflictError("Category already exists", code="category_exists")
 
     async def create(self, payload: CategoryCreate, user_id: int) -> Category:
         await self._ensure_name_free(payload.name, user_id)
@@ -79,7 +81,8 @@ class CategoryService:
         if any(not category_allows(kind, t) for t in used_types):
             raise ConflictError(
                 "The category already has transactions of another type; "
-                "move them before changing its kind"
+                "move them before changing its kind",
+                code="category_kind_conflict",
             )
 
     async def delete(self, category_id: int, user_id: int) -> None:
@@ -90,6 +93,7 @@ class CategoryService:
         )
         if used_by_transactions or used_by_budgets:
             raise ConflictError(
-                "Category is used by transactions or budgets; reassign them before deleting"
+                "Category is used by transactions or budgets; reassign them before deleting",
+                code="category_in_use",
             )
         await self.db.delete(category)

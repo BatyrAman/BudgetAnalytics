@@ -13,6 +13,10 @@ class TokenError(Exception):
     """Токен невалиден, просрочен или имеет неверный тип."""
 
 
+class TokenExpiredError(TokenError):
+    """Подпись токена верна, но срок его действия истёк."""
+
+
 # Новые хеши — Argon2. Bcrypt оставлен только для проверки хешей,
 # созданных прежней реализацией (passlib + bcrypt).
 password_hash = PasswordHash(
@@ -99,6 +103,8 @@ def decode_token(
             algorithms=[settings.ALGORITHM],
             options={"require": ["exp"]},
         )
+    except jwt.ExpiredSignatureError as exc:
+        raise TokenExpiredError("Token has expired") from exc
     except jwt.InvalidTokenError as exc:
         raise TokenError("Could not validate token") from exc
 

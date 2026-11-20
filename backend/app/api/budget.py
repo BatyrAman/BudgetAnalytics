@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -28,6 +29,7 @@ from app.schemas.budget import (
     BudgetUtilizationResponse,
 )
 from app.services.budgets import BudgetService, budget_progress_percent
+from app.services.finance import BudgetUtilization
 from app.services.financial_summary import FinancialSummaryService
 
 router = APIRouter(prefix="/budgets", tags=["Budgets"])
@@ -167,6 +169,44 @@ async def get_alerts(
     return alerts
 
 
+# ---------------------------------------------------------------- utilization of all budgets
+def _utilization_response(
+    budget_id: int, first_day: date, result: BudgetUtilization
+) -> BudgetUtilizationResponse:
+    return BudgetUtilizationResponse(
+        budget_id=budget_id,
+        month=f"{first_day:%Y-%m}",
+        currency_code=result.currency_code,
+        limit=result.limit,
+        spent=result.spent,
+        remaining=result.remaining,
+        utilization_percent=result.utilization_percent,
+        is_exceeded=result.is_exceeded,
+    )
+
+
+# Declared before ``/{budget_id}`` so "utilization" is not parsed as an id.
+@router.get("/utilization", response_model=list[BudgetUtilizationResponse], responses=_ERRORS)
+async def list_budget_utilization(
+    month: str | None = Query(
+        default=None, pattern=r"^\d{4}-\d{2}$", description="YYYY-MM; default: current month"
+    ),
+    tz: ZoneInfo = Depends(get_timezone),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[BudgetUtilizationResponse]:
+    """Actual utilization of ALL the user's budgets (every currency) for a
+    calendar month (local to ``tz``), ordered by budget id. Each item equals
+    ``GET /budgets/{id}/utilization`` for the same ``month`` and ``tz``.
+    Not paginated: one item per budget of the current user."""
+
+    first_day = parse_month(month, tz)
+    results = await FinancialSummaryService(db).all_budget_utilizations(
+        current_user.id, first_day, tz
+    )
+    return [_utilization_response(budget.id, first_day, r) for budget, r in results]
+
+
 # ---------------------------------------------------------------- single budget
 @router.get("/{budget_id}", response_model=BudgetDetail, responses=_ERRORS)
 async def get_budget(
@@ -194,16 +234,7 @@ async def get_budget_utilization(
     result = await FinancialSummaryService(db).budget_utilization(
         current_user.id, budget_id, first_day, tz
     )
-    return BudgetUtilizationResponse(
-        budget_id=budget_id,
-        month=f"{first_day:%Y-%m}",
-        currency_code=result.currency_code,
-        limit=result.limit,
-        spent=result.spent,
-        remaining=result.remaining,
-        utilization_percent=result.utilization_percent,
-        is_exceeded=result.is_exceeded,
-    )
+    return _utilization_response(budget_id, first_day, result)
 
 
 async def _update(budget_id: int, payload: BudgetUpdate, user: User, db: AsyncSession) -> Budget:

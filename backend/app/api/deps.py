@@ -5,14 +5,15 @@ from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import Depends, HTTPException, Query, Request, status
+from fastapi import Depends, Query, Request
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.database import get_db
+from app.core.errors import AuthenticationError, DomainValidationError, PermissionDeniedError
 from app.core.rate_limit import API_PER_IP, RateLimiter, Rule, get_rate_limiter
-from app.core.security import TokenError, decode_token
+from app.core.security import TokenError, TokenExpiredError, decode_token
 from app.models.user import User
 from app.repositories.currency import CurrencyRepository
 from app.repositories.user import UserRepository
@@ -42,36 +43,35 @@ async def get_current_user(
     либо пользователь по нему не найден.
     """
 
-    credentials_error = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+    credentials_message = "Could not validate credentials"
 
     if token is None:
-        raise credentials_error
+        # No token at all: the generic ``unauthorized`` code (nothing was rejected).
+        raise AuthenticationError(credentials_message)
 
     try:
         payload = decode_token(token, expected_type="access")
+    except TokenExpiredError:
+        raise AuthenticationError(credentials_message, code="token_expired") from None
     except TokenError:
-        raise credentials_error from None
+        raise AuthenticationError(credentials_message, code="invalid_token") from None
 
     user_id = payload.get("sub")
 
     if user_id is None:
-        raise credentials_error
+        raise AuthenticationError(credentials_message, code="invalid_token")
 
     try:
         user_id = int(user_id)
     except (TypeError, ValueError):
-        raise credentials_error from None
+        raise AuthenticationError(credentials_message, code="invalid_token") from None
 
     user = await UserRepository(db).get_by_id(user_id)
 
     # ``ver`` must match: logout-all / password change bump token_version and
     # thereby invalidate every access token issued before.
     if user is None or payload.get("ver") != user.token_version:
-        raise credentials_error
+        raise AuthenticationError(credentials_message, code="invalid_token")
 
     return user
 
@@ -81,10 +81,7 @@ async def get_current_active_user(
 ) -> User:
 
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Inactive user",
-        )
+        raise PermissionDeniedError("Inactive user", code="inactive_user")
 
     return current_user
 
@@ -121,9 +118,7 @@ def get_timezone(
     try:
         return ZoneInfo(tz)
     except (ZoneInfoNotFoundError, ValueError):
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown time zone"
-        ) from None
+        raise DomainValidationError("Unknown time zone", code="unknown_timezone") from None
 
 
 async def get_currency(
@@ -138,9 +133,7 @@ async def get_currency(
     code = currency or current_user.default_currency_code
     spec = await CurrencyRepository(db).get_spec(code)
     if spec is None:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Unknown currency"
-        )
+        raise DomainValidationError("Unknown currency", code="unknown_currency")
     return spec
 
 
@@ -177,15 +170,11 @@ def get_date_range(
     else:
         end = date_to
     if end < start:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="date_to must not be before date_from",
+        raise DomainValidationError(
+            "date_to must not be before date_from", code="invalid_date_range"
         )
     if (end - start).days >= MAX_PERIOD_DAYS:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="The period must not exceed 5 years",
-        )
+        raise DomainValidationError("The period must not exceed 5 years", code="period_too_long")
     return DateRange(start, end, tz)
 
 
@@ -197,9 +186,7 @@ def parse_month(month: str | None, tz: ZoneInfo) -> date:
     try:
         return datetime.strptime(month, "%Y-%m").date()
     except ValueError:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="month must be YYYY-MM"
-        ) from None
+        raise DomainValidationError("month must be YYYY-MM", code="invalid_month") from None
 
 
 # ---------------------------------------------------------------- rate limiting

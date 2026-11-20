@@ -203,6 +203,40 @@ class TransactionRepository:
             result.count += count
         return result
 
+    async def sums_by_currency_and_category(
+        self, user_id: int, start: datetime, end: datetime, currency_codes: set[str]
+    ) -> dict[tuple[str, int | None], TypeSums]:
+        """Per (currency, category or ``None``) per-type sums in one query —
+        the input for utilization of many budgets at once (no N+1)."""
+
+        _require_aware(start, end)
+        if not currency_codes:
+            return {}
+        stmt = (
+            select(
+                Transaction.currency_code,
+                Transaction.category_id,
+                Transaction.transaction_type,
+                func.sum(Transaction.amount),
+                func.count(Transaction.id),
+            )
+            .where(
+                Transaction.user_id == user_id,
+                Transaction.currency_code.in_(sorted(currency_codes)),
+                Transaction.transaction_date >= start,
+                Transaction.transaction_date < end,
+            )
+            .group_by(
+                Transaction.currency_code, Transaction.category_id, Transaction.transaction_type
+            )
+        )
+        result: dict[tuple[str, int | None], TypeSums] = defaultdict(TypeSums)
+        for currency_code, category_id, kind, total, count in await self.db.execute(stmt):
+            entry = result[(currency_code, category_id)]
+            entry.sums[kind] = total
+            entry.count += count
+        return dict(result)
+
     async def sums_by_category(
         self, user_id: int, start: datetime, end: datetime, currency_code: str
     ) -> list[CategorySums]:

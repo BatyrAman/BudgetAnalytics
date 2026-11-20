@@ -14,10 +14,11 @@ from zoneinfo import ZoneInfo
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
+from app.models.budget import Budget
 from app.models.enums import TransactionType
 from app.repositories.budget import BudgetRepository
 from app.repositories.currency import CurrencyRepository
-from app.repositories.transaction import TransactionRepository
+from app.repositories.transaction import TransactionRepository, TypeSums
 from app.services.finance import (
     BudgetUtilization,
     CashflowTotals,
@@ -215,10 +216,51 @@ class FinancialSummaryService:
 
         budget = await self.budgets.get_for_user(budget_id, user_id)
         if budget is None:
-            raise NotFoundError("Budget not found")
+            raise NotFoundError("Budget not found", code="budget_not_found")
         currency = await self.currency(budget.currency_code)
         period = month_period(month.year, month.month, tz)
         totals = await self.totals(
             user_id, period.start, period.end, currency, category_id=budget.category_id
         )
         return budget_utilization(budget.monthly_limit, totals.net_expenses, currency)
+
+    async def all_budget_utilizations(
+        self,
+        user_id: int,
+        month: date,
+        tz: ZoneInfo = DEFAULT_TIMEZONE,
+    ) -> list[tuple[Budget, BudgetUtilization]]:
+        """Utilization of EVERY budget of the user (all currencies) for the
+        month of ``month``, ordered by budget id. Same definitions as
+        ``budget_utilization`` (net expenses = expenses − refunds, in the
+        budget's currency and, if set, its category; month boundaries in
+        ``tz``), but one aggregate query for all budgets."""
+
+        budgets = await self.budgets.list_for_user(user_id)
+        if not budgets:
+            return []
+        period = month_period(month.year, month.month, tz)
+        codes = {b.currency_code for b in budgets}
+        groups = await self.transactions.sums_by_currency_and_category(
+            user_id, period.start, period.end, codes
+        )
+        specs = {code: await self.currency(code) for code in sorted(codes)}
+
+        results: list[tuple[Budget, BudgetUtilization]] = []
+        for budget in budgets:
+            currency = specs[budget.currency_code]
+            sums = TypeSums()
+            for (code, category_id), group in groups.items():
+                if code != budget.currency_code:
+                    continue
+                if budget.category_id is not None and category_id != budget.category_id:
+                    continue
+                with calc_context():
+                    for kind, total in group.sums.items():
+                        sums.sums[kind] = sums.sums.get(kind, Decimal("0")) + total
+                sums.count += group.count
+            totals = totals_from_sums(sums.sums, sums.count, currency)
+            results.append(
+                (budget, budget_utilization(budget.monthly_limit, totals.net_expenses, currency))
+            )
+        return results

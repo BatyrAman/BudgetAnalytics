@@ -1,13 +1,13 @@
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, get_db, limit_per_ip, limit_per_user
-from app.core.errors import ErrorResponse
+from app.core.errors import AuthenticationError, ErrorResponse, PermissionDeniedError
 from app.core.rate_limit import (
     LOGIN_PER_ACCOUNT,
     LOGIN_PER_IP,
@@ -108,11 +108,9 @@ async def _login(
     service = AuthService(db)
     user = await service.authenticate(payload.email, payload.password)
     if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password"
-        )
+        raise AuthenticationError("Incorrect email or password", code="invalid_credentials")
     if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
+        raise PermissionDeniedError("Inactive user", code="inactive_user")
     tokens = await service.issue_tokens(user)
     await db.commit()
     return _pair(tokens)

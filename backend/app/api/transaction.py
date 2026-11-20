@@ -2,12 +2,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import PaginationParams, get_current_active_user, get_db
-from app.core.errors import ErrorResponse
+from app.core.errors import DomainValidationError, ErrorResponse
 from app.models.bank import Bank
 from app.models.category import Category
 from app.models.enums import TransactionType as TransactionTypeModel
@@ -87,14 +87,12 @@ async def list_transactions(
     start = to_utc(start_date) if start_date else None
     end = to_utc(end_date) if end_date else None
     if start and end and end < start:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="end_date must not be before start_date",
+        raise DomainValidationError(
+            "end_date must not be before start_date", code="invalid_date_range"
         )
     if min_amount is not None and max_amount is not None and max_amount < min_amount:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-            detail="max_amount must not be less than min_amount",
+        raise DomainValidationError(
+            "max_amount must not be less than min_amount", code="invalid_amount_range"
         )
     filters = TransactionFilters(
         start=start,

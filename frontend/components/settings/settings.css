@@ -1,0 +1,10 @@
+.settings-password-field {
+  display: flex;
+  width: min(100%, 480px);
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-password-field small {
+  color: var(--text-secondary);
+  font-size: 12px;
+}

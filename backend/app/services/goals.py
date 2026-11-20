@@ -82,13 +82,13 @@ class GoalService:
     async def get(self, goal_id: int, user_id: int) -> FinancialGoal:
         goal = await self.goals.get_for_user(goal_id, user_id)
         if goal is None:
-            raise NotFoundError("Goal not found")
+            raise NotFoundError("Goal not found", code="goal_not_found")
         return goal
 
     async def create(self, payload: GoalCreate, user: User) -> FinancialGoal:
         currency = payload.currency or user.default_currency_code
         if await CurrencyRepository(self.db).get(currency) is None:
-            raise AppError("Unknown currency")
+            raise AppError("Unknown currency", code="unknown_currency")
         goal = FinancialGoal(
             user_id=user.id,
             name=payload.name,

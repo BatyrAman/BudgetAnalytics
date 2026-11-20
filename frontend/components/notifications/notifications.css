@@ -1,0 +1,13 @@
+ul.notifications-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.notifications-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+.notifications-actions .button svg {
+  width: 15px;
+  height: 15px;
+}

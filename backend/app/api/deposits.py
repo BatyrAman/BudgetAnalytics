@@ -61,7 +61,7 @@ async def calculate_deposit(
 
     currency = await CurrencyRepository(db).get_spec(payload.currency)
     if currency is None:
-        raise AppError("Unknown currency")
+        raise AppError("Unknown currency", code="unknown_currency")
     end = payload.end_date or add_months(payload.start_date, payload.term_months or 0)
     result = deposit_maturity(
         payload.principal,

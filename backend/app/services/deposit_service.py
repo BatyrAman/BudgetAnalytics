@@ -40,7 +40,7 @@ class DepositService:
     async def get(self, deposit_id: int, user_id: int) -> Deposit:
         deposit = await self.deposits.get_for_user(deposit_id, user_id)
         if deposit is None:
-            raise NotFoundError("Deposit not found")
+            raise NotFoundError("Deposit not found", code="deposit_not_found")
         return deposit
 
     async def list(self, user_id: int, limit: int, offset: int) -> tuple[list[Deposit], int]:
@@ -53,12 +53,12 @@ class DepositService:
 
     async def _check_bank(self, bank_id: int) -> None:
         if await self.db.get(Bank, bank_id) is None:
-            raise AppError("Bank not found")
+            raise AppError("Bank not found", code="bank_not_found")
 
     async def create(self, payload: DepositCreate, user: User) -> Deposit:
         currency = payload.currency or user.default_currency_code
         if await CurrencyRepository(self.db).get(currency) is None:
-            raise AppError("Unknown currency")
+            raise AppError("Unknown currency", code="unknown_currency")
         await self._check_bank(payload.bank_id)
         deposit = Deposit(
             user_id=user.id,
@@ -86,7 +86,9 @@ class DepositService:
         start = changes.get("start_date", deposit.start_date)
         end = changes.get("end_date", deposit.end_date)
         if end <= start:
-            raise DomainValidationError("end_date must be after start_date")
+            raise DomainValidationError(
+                "end_date must be after start_date", code="invalid_date_range"
+            )
         for field, value in changes.items():
             setattr(deposit, field, value)
         await self.db.flush()

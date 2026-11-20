@@ -61,9 +61,14 @@ class AppError(Exception):
     code = "bad_request"
     headers: dict[str, str] | None = None
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, code: str | None = None) -> None:
         super().__init__(message)
         self.message = message
+        # A stable, machine-readable snake_case code of the business rule
+        # (documented in docs/design/API_TO_UI_MAPPING.md §0.2). The class
+        # attribute is only a fallback for raise sites without a specific code.
+        if code is not None:
+            self.code = code
 
 
 class NotFoundError(AppError):
@@ -158,11 +163,35 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # PostgreSQL SQLSTATE -> (HTTP status, code, safe message). Values and
 # constraint names are never echoed to the client (only logged).
 _INTEGRITY_ERRORS = {
-    "23505": (409, "conflict", "The request conflicts with an existing record"),
+    "23505": (409, "duplicate", "The request conflicts with an existing record"),
     "23503": (422, "invalid_reference", "A referenced record does not exist"),
     "23514": (422, "constraint_violation", "A value violates a data constraint"),
     "23502": (422, "constraint_violation", "A required value is missing"),
 }
+
+
+# Unique constraint/index name -> entity-specific code for a 23505 violation
+# (e.g. a race between two requests that passed the service-level check). The
+# HTTP status and the generic message stay the same; unknown names keep
+# ``duplicate``.
+_UNIQUE_VIOLATION_CODES = {
+    "uq_accounts_user_id_name": "account_name_taken",
+    "uq_financial_goals_user_id_name": "goal_name_taken",
+    "uq_categories_user_id_name": "category_exists",
+    "uq_categories_system_name": "category_exists",
+    "ix_users_email": "email_taken",
+}
+
+
+def _constraint_name(exc: IntegrityError) -> str | None:
+    """asyncpg exposes the violated constraint on the driver exception that
+    SQLAlchemy's adapter wraps (``exc.orig.__cause__``)."""
+
+    for candidate in (getattr(exc.orig, "__cause__", None), exc.orig):
+        name = getattr(candidate, "constraint_name", None)
+        if isinstance(name, str):
+            return name
+    return None
 
 
 def _sqlstate(exc: IntegrityError) -> str | None:
@@ -179,7 +208,9 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
     status_code, code, message = _INTEGRITY_ERRORS.get(
         sqlstate or "", (409, "conflict", "The request conflicts with stored data")
     )
-    cause = getattr(exc.orig, "__cause__", None)
+    constraint = _constraint_name(exc)
+    if sqlstate == "23505" and constraint is not None:
+        code = _UNIQUE_VIOLATION_CODES.get(constraint, code)
     logger.warning(
         "integrity error",
         extra={
@@ -187,7 +218,7 @@ async def integrity_error_handler(request: Request, exc: IntegrityError) -> JSON
                 "request_id": _request_id(request),
                 "path": request.url.path,
                 "sqlstate": sqlstate,
-                "constraint": getattr(cause, "constraint_name", None),
+                "constraint": constraint,
             }
         },
     )

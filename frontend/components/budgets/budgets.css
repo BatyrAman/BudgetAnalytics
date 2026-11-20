@@ -1,0 +1,5 @@
+/* Feature styles for budgets (B-1…B-3); uses global design tokens only. */
+.budget-form-dialog .field-error {
+  font-size: 12px;
+  color: var(--text-negative);
+}

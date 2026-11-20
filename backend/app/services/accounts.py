@@ -52,7 +52,7 @@ class AccountService:
     async def get_owned(self, account_id: int, user_id: int) -> Account:
         account = await self.accounts.get_for_user(account_id, user_id)
         if account is None:
-            raise NotFoundError("Account not found")
+            raise NotFoundError("Account not found", code="account_not_found")
         return account
 
     async def get(self, account_id: int, user_id: int) -> AccountWithBalance:
@@ -61,12 +61,12 @@ class AccountService:
 
     async def _check_bank(self, bank_id: int | None) -> None:
         if bank_id is not None and await self.db.get(Bank, bank_id) is None:
-            raise DomainValidationError("Bank not found")
+            raise DomainValidationError("Bank not found", code="bank_not_found")
 
     async def create(self, payload: AccountCreate, user: User) -> AccountWithBalance:
         currency = payload.currency or user.default_currency_code
         if await CurrencyRepository(self.db).get(currency) is None:
-            raise DomainValidationError("Unknown currency")
+            raise DomainValidationError("Unknown currency", code="unknown_currency")
         await self._check_bank(payload.bank_id)
         account = Account(
             user_id=user.id,
@@ -99,5 +99,8 @@ class AccountService:
     async def delete(self, account_id: int, user_id: int) -> None:
         account = await self.get_owned(account_id, user_id)
         if await self.transactions.count_for_account(account.id, user_id):
-            raise ConflictError("Account has transactions; archive it instead of deleting")
+            raise ConflictError(
+                "Account has transactions; archive it instead of deleting",
+                code="account_has_transactions",
+            )
         await self.db.delete(account)

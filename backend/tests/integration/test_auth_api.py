@@ -36,7 +36,7 @@ async def test_duplicate_email_is_rejected(client: httpx.AsyncClient) -> None:
         json={"full_name": "Other", "email": "dup@example.com", "password": "Another-pass-1"},
     )
     assert response.status_code == 409
-    assert response.json()["code"] == "conflict"
+    assert response.json()["code"] == "email_taken"
 
 
 async def test_wrong_password_and_unknown_email_look_the_same(client: httpx.AsyncClient) -> None:

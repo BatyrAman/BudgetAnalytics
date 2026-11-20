@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 
 class UserBase(BaseModel):
@@ -20,6 +20,10 @@ class UserUpdate(BaseModel):
 class UserResponse(UserBase):
     id: int
     is_active: bool
+    default_currency_code: str = Field(
+        description="ISO 4217 code used when a request omits `currency` (e.g. KZT)",
+        examples=["KZT"],
+    )
     created_at: datetime
     updated_at: datetime
 

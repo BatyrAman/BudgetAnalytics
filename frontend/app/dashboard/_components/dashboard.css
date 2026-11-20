@@ -1,0 +1,10 @@
+/* D-1 Обзор — feature-specific styles (uses existing design tokens only). */
+.metric-hint {
+  display: contents;
+}
+
+.null-value {
+  cursor: help;
+  text-decoration: underline dotted var(--text-secondary);
+  text-underline-offset: 3px;
+}

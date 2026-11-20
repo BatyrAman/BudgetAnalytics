@@ -85,7 +85,12 @@ async def test_preview_then_commit(
     assert all("4400430012345678" not in (t.description or "") for t in stored)
 
     # Committing twice is refused.
-    assert (await commit(client, alice, summary["id"])).status_code == 409
+    again = await commit(client, alice, summary["id"])
+    assert again.status_code == 409
+    assert again.json()["code"] == "import_not_committable"
+    cancel = await client.delete(f"{API}/imports/{summary['id']}", headers=alice)
+    assert cancel.status_code == 409
+    assert cancel.json()["code"] == "import_not_cancellable"
 
 
 async def test_identical_rows_in_one_file_are_both_imported(
@@ -287,7 +292,9 @@ async def test_cancel_deletes_preview_rows(
     assert (await client.get(f"{API}/imports/{import_id}", headers=alice)).json()[
         "status"
     ] == "cancelled"
-    assert (await commit(client, alice, import_id)).status_code == 409
+    refused = await commit(client, alice, import_id)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "import_not_committable"
 
 
 async def test_expired_preview_cannot_be_committed(
@@ -300,7 +307,9 @@ async def test_expired_preview_cannot_be_committed(
         .values(expires_at=datetime.now(UTC) - timedelta(minutes=1))
     )
     await db_session.commit()
-    assert (await commit(client, alice, import_id)).status_code == 409
+    expired = await commit(client, alice, import_id)
+    assert expired.status_code == 409
+    assert expired.json()["code"] == "import_expired"
     assert (await client.get(f"{API}/imports/{import_id}", headers=alice)).json()[
         "status"
     ] == "expired"
@@ -311,7 +320,9 @@ async def test_other_users_imports_are_not_accessible(
 ) -> None:
     bob = bearer(await register(client, "bob@example.com"))
     import_id = (await preview(client, alice, fx.csv_bytes())).json()["import"]["id"]
-    assert (await client.get(f"{API}/imports/{import_id}", headers=bob)).status_code == 404
+    missing = await client.get(f"{API}/imports/{import_id}", headers=bob)
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "import_not_found"
     assert (await client.get(f"{API}/imports/{import_id}/rows", headers=bob)).status_code == 404
     assert (await commit(client, bob, import_id)).status_code == 404
     assert (await client.delete(f"{API}/imports/{import_id}", headers=bob)).status_code == 404

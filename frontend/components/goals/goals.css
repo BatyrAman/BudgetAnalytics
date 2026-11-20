@@ -1,0 +1,6 @@
+/* Feature styles for goals (G-1…G-3); uses global design tokens only. */
+.goal-form-dialog .field-error,
+.goal-savings-dialog .field-error {
+  font-size: 12px;
+  color: var(--text-negative);
+}

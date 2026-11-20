@@ -82,7 +82,7 @@ class ImportService:
             )
         )
         if record is None:
-            raise NotFoundError("Import not found")
+            raise NotFoundError("Import not found", code="import_not_found")
         return record
 
     async def history(
@@ -329,9 +329,14 @@ class ImportService:
         ):
             await self.expire_previews(user.id)
             await self.db.commit()  # persist the expiry; the 409 below rolls back the request
-            raise ConflictError("The preview has expired; upload the file again")
+            raise ConflictError(
+                "The preview has expired; upload the file again", code="import_expired"
+            )
         if record.status != "preview":
-            raise ConflictError(f"The import cannot be committed (status: {record.status})")
+            raise ConflictError(
+                f"The import cannot be committed (status: {record.status})",
+                code="import_not_committable",
+            )
 
         rows = list(
             await self.db.scalars(
@@ -424,7 +429,10 @@ class ImportService:
     async def cancel(self, import_id: int, user_id: int) -> None:
         record = await self.get(import_id, user_id)
         if record.status != "preview":
-            raise ConflictError(f"Only previews can be cancelled (status: {record.status})")
+            raise ConflictError(
+                f"Only previews can be cancelled (status: {record.status})",
+                code="import_not_cancellable",
+            )
         await self.db.execute(
             delete(StatementImportRow).where(StatementImportRow.import_id == record.id)
         )

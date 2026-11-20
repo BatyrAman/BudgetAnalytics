@@ -23,6 +23,7 @@ from app.core.config import settings
 from app.core.errors import AppError, AuthenticationError, ConflictError
 from app.core.security import (
     TokenError,
+    TokenExpiredError,
     create_access_token,
     create_refresh_token,
     decode_token,
@@ -56,7 +57,7 @@ class AuthService:
     # ------------------------------------------------------------ users
     async def register(self, full_name: str, email: str, password: str) -> User:
         if await self.users.get_by_email(email) is not None:
-            raise ConflictError("User with this email already exists")
+            raise ConflictError("User with this email already exists", code="email_taken")
         user = User(
             full_name=full_name, email=email.lower(), hashed_password=hash_password(password)
         )
@@ -76,7 +77,7 @@ class AuthService:
 
     async def change_password(self, user: User, old_password: str, new_password: str) -> None:
         if not verify_password(old_password, user.hashed_password):
-            raise AppError("Old password is incorrect")  # 400, as before
+            raise AppError("Old password is incorrect", code="wrong_password")  # 400, as before
         user.hashed_password = hash_password(new_password)
         await self._invalidate_all_sessions(user)
 
@@ -101,14 +102,17 @@ class AuthService:
     async def _load_refresh(self, refresh_token: str) -> tuple[RefreshToken, dict[str, object]]:
         try:
             payload = decode_token(refresh_token, expected_type="refresh")
+        except TokenExpiredError:
+            raise AuthenticationError(_INVALID_REFRESH, code="token_expired") from None
         except TokenError:
-            raise AuthenticationError(_INVALID_REFRESH) from None
+            raise AuthenticationError(_INVALID_REFRESH, code="invalid_token") from None
         jti = payload.get("jti")
         if not isinstance(jti, str):
-            raise AuthenticationError(_INVALID_REFRESH)  # issued before rotation existed
+            # issued before rotation existed
+            raise AuthenticationError(_INVALID_REFRESH, code="invalid_token")
         record = await self.tokens.get_for_update(jti)
         if record is None or str(record.user_id) != payload.get("sub"):
-            raise AuthenticationError(_INVALID_REFRESH)
+            raise AuthenticationError(_INVALID_REFRESH, code="invalid_token")
         return record, payload
 
     async def rotate(self, refresh_token: str) -> TokenPair:
@@ -118,13 +122,13 @@ class AuthService:
             # Reuse of a rotated/revoked token: assume theft, end the session family.
             await self.tokens.revoke_family(record.family_id, now)
             await self.db.commit()
-            raise AuthenticationError(_INVALID_REFRESH)
+            raise AuthenticationError(_INVALID_REFRESH, code="invalid_token")
         if record.expires_at <= now:
-            raise AuthenticationError(_INVALID_REFRESH)
+            raise AuthenticationError(_INVALID_REFRESH, code="token_expired")
 
         user = await self.users.get_by_id(record.user_id)
         if user is None or not user.is_active:
-            raise AuthenticationError(_INVALID_REFRESH)
+            raise AuthenticationError(_INVALID_REFRESH, code="invalid_token")
 
         record.revoked_at = now
         return await self.issue_tokens(user, family_id=record.family_id)

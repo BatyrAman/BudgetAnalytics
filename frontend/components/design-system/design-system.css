@@ -1,0 +1,201 @@
+/* Design-system showcase helpers. Uses only existing tokens from app/globals.css. */
+
+.ds-note {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
+.ds-matrix {
+  display: grid;
+  gap: 8px;
+  overflow-x: auto;
+}
+.ds-matrix-row {
+  display: grid;
+  grid-template-columns: 140px repeat(5, minmax(150px, 1fr));
+  align-items: center;
+  gap: 12px;
+  min-width: 900px;
+}
+.ds-matrix-head {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.ds-matrix-row [role="cell"] {
+  display: grid;
+  gap: 4px;
+}
+.ds-na {
+  color: var(--text-tertiary);
+}
+
+/* Static imitations of interactive states — the same values as the real :hover/:focus-visible rules. */
+.button.primary.ds-force-hover {
+  background: var(--brand-hover);
+}
+.ds-force-focus,
+.ds-field.ds-force-focus input {
+  outline: 3px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  outline-offset: 2px;
+}
+.filter-chip.ds-force-hover {
+  background: var(--surface-hover);
+}
+.ds-disabled {
+  opacity: 0.55;
+}
+
+.ds-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 0 10px;
+  background: var(--surface);
+}
+.ds-field input {
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  width: 100px;
+  height: 36px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.ds-field.ds-force-hover {
+  border-color: var(--text-tertiary);
+}
+.ds-field.ds-force-error {
+  border-color: var(--negative);
+}
+.ds-error-text {
+  color: var(--text-negative);
+  font-size: 12px;
+}
+
+.ds-accordion details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  margin-bottom: 8px;
+}
+.ds-accordion summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+.ds-accordion summary::-webkit-details-marker {
+  display: none;
+}
+.ds-accordion details[open] summary svg {
+  transform: rotate(180deg);
+}
+.ds-accordion p {
+  margin: 0;
+  padding: 0 14px 14px;
+  color: var(--text-secondary);
+}
+
+.ds-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+.ds-nav-grid figure {
+  margin: 0;
+}
+.ds-nav-grid figcaption {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+.ds-nav-sidebar,
+.ds-nav-rail,
+.ds-nav-bottom {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 8px;
+}
+.ds-nav-sidebar {
+  display: grid;
+  gap: 4px;
+}
+.ds-nav-rail {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  width: 72px;
+}
+.ds-nav-bottom {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+}
+.ds-nav-sidebar span,
+.ds-nav-rail span,
+.ds-nav-bottom span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 8px;
+  color: var(--text-secondary);
+}
+.ds-nav-bottom span {
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 4px;
+}
+.ds-nav-sidebar .active,
+.ds-nav-rail .active,
+.ds-nav-bottom .active {
+  background: var(--brand-subtle);
+  color: var(--text-primary);
+}
+.ds-nav-bottom .ds-nav-plus {
+  background: var(--brand);
+  color: var(--text-on-brand);
+  border-radius: 999px;
+}
+
+.ds-theme-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.ds-theme-light,
+.ds-theme-dark {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--background);
+  color: var(--text-primary);
+}
+.ds-theme-light > small,
+.ds-theme-dark > small {
+  color: var(--text-secondary);
+}
+.ds-theme-sample {
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+.ds-theme-sample strong {
+  font-size: 24px;
+  font-variant-numeric: tabular-nums;
+}
+.ds-theme-positive {
+  color: var(--text-positive);
+}
+.ds-theme-negative {
+  color: var(--text-negative);
+}

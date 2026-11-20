@@ -41,7 +41,13 @@ class BudgetResponse(BaseModel):
     monthly_limit: Decimal
     currency_code: str
     category_id: int | None
-    spent: Decimal = Field(description="DEPRECATED manual value; see /budgets/{id}/utilization")
+    spent: Decimal = Field(
+        description=(
+            "DEPRECATED: manually entered value, NOT computed from transactions. "
+            "Clients must use GET /budgets/utilization or GET /budgets/{id}/utilization "
+            "for actual spending."
+        )
+    )
     user_id: int
     created_at: datetime
     updated_at: datetime
@@ -49,10 +55,16 @@ class BudgetResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+_DEPRECATED_MANUAL = (
+    "DEPRECATED: derived from the manual `spent` value, NOT from transactions. "
+    "Clients must use GET /budgets/utilization or GET /budgets/{id}/utilization."
+)
+
+
 class BudgetDetail(BudgetResponse):
-    remaining: Decimal
-    progress: float
-    is_exceeded: bool
+    remaining: Decimal = Field(description=_DEPRECATED_MANUAL)
+    progress: float = Field(description=_DEPRECATED_MANUAL)
+    is_exceeded: bool = Field(description=_DEPRECATED_MANUAL)
 
 
 class BudgetListResponse(Page[BudgetResponse]):

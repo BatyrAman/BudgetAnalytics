@@ -36,7 +36,7 @@ class BudgetService:
     async def get(self, budget_id: int, user_id: int) -> Budget:
         budget = await self.budgets.get_for_user(budget_id, user_id)
         if budget is None:
-            raise NotFoundError("Budget not found")
+            raise NotFoundError("Budget not found", code="budget_not_found")
         return budget
 
     async def _check_category(self, category_id: int | None, user_id: int) -> None:
@@ -44,13 +44,16 @@ class BudgetService:
             return
         category = await CategoryRepository(self.db).get_visible(category_id, user_id)
         if category is None:
-            raise AppError("Category not found")
+            raise AppError("Category not found", code="category_not_found")
         if category.kind is CategoryKind.INCOME:
-            raise AppError("A budget limits spending; an income category cannot be used")
+            raise AppError(
+                "A budget limits spending; an income category cannot be used",
+                code="budget_income_category",
+            )
 
     async def _check_currency(self, code: str) -> None:
         if await CurrencyRepository(self.db).get(code) is None:
-            raise AppError("Unknown currency")
+            raise AppError("Unknown currency", code="unknown_currency")
 
     async def create(self, payload: BudgetCreate, user: User) -> Budget:
         currency = payload.currency or user.default_currency_code
