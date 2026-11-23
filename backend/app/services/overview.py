@@ -18,7 +18,7 @@ from app.schemas.reports import (
     OverviewResponse,
 )
 from app.services.accounts import AccountService
-from app.services.deposits import maturity_of
+from app.services.deposits import maturity_of, valid_deposits
 from app.services.finance import (
     CurrencySpec,
     average,
@@ -111,8 +111,8 @@ class OverviewService:
                 )
             )
 
-        # Deposits in this currency.
-        deposits = list(
+        # Deposits in this currency; legacy rows with a data_issue are excluded.
+        deposits = valid_deposits(
             await self.db.scalars(
                 select(Deposit).where(
                     Deposit.user_id == user_id, Deposit.currency_code == currency.code

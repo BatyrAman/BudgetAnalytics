@@ -201,7 +201,8 @@ class TestConstraintErrorsAreClientErrors:
             json={"end_date": "2024-12-31"},
         )
         assert response.status_code == 422
-        assert response.json()["code"] == "constraint_violation"
+        # Validated before the database constraint since T4 (stable code).
+        assert response.json()["code"] == "invalid_date_range"
         assert "ck_" not in response.text  # constraint names are not leaked
 
     async def test_amount_beyond_numeric_range_is_rejected_by_validation(

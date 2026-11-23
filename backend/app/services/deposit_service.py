@@ -3,7 +3,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import AppError, DomainValidationError, NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.models.bank import Bank
 from app.models.deposit import Deposit
 from app.models.enums import Capitalization
@@ -11,6 +11,7 @@ from app.models.user import User
 from app.repositories.currency import CurrencyRepository
 from app.repositories.deposit import DepositRepository
 from app.schemas.deposits import DepositCreate, DepositUpdate, Maturity
+from app.services.deposits import validate_deposit_term
 from app.services.finance import DepositMaturity, effective_annual_rate
 
 PERIODS_PER_YEAR = {
@@ -83,11 +84,13 @@ class DepositService:
             await self._check_bank(changes["bank_id"])
         if "principal" in changes:
             changes["amount"] = changes.pop("principal")
-        start = changes.get("start_date", deposit.start_date)
-        end = changes.get("end_date", deposit.end_date)
-        if end <= start:
-            raise DomainValidationError(
-                "end_date must be after start_date", code="invalid_date_range"
+        if "start_date" in changes or "end_date" in changes:
+            # Validated together with the stored date that is not changing.
+            # Edits that leave the dates alone stay possible on a legacy
+            # deposit with a data_issue (it is never silently "fixed").
+            validate_deposit_term(
+                changes.get("start_date", deposit.start_date),
+                changes.get("end_date", deposit.end_date),
             )
         for field, value in changes.items():
             setattr(deposit, field, value)

@@ -16,6 +16,7 @@ import {
   CAPITALIZATION_LABELS,
   SUPPORTED_CURRENCIES,
   dateRangeError,
+  depositFieldErrors,
   effectiveRateError,
   nominalRateError,
   normalizeDecimal,
@@ -152,16 +153,24 @@ export function DepositFormDialog({
       const apiErrors: Errors = {};
       if (reason instanceof ApiError) {
         if (reason.code === "bank_not_found") apiErrors.bank_id = toUserMessage(reason);
-        if (reason.code === "invalid_date_range") apiErrors.end_date = toUserMessage(reason);
-        if (reason.code === "unknown_currency") apiErrors.currency = toUserMessage(reason);
-        for (const item of reason.fieldErrors) {
-          if (FIELDS.has(item.field)) apiErrors[item.field as Field] = item.message;
+        if (
+          reason.code === "invalid_date_range" ||
+          reason.code === "date_out_of_range" ||
+          reason.code === "term_too_long"
+        ) {
+          apiErrors.end_date = toUserMessage(reason);
         }
+        if (reason.code === "unknown_currency") apiErrors.currency = toUserMessage(reason);
+      }
+      const fieldErrors =
+        reason instanceof ApiError ? depositFieldErrors(reason.fieldErrors, "end_date") : [];
+      for (const item of fieldErrors) {
+        if (FIELDS.has(item.field)) apiErrors[item.field as Field] = item.message;
       }
       setErrors(apiErrors);
       if (Object.keys(apiErrors).length === 0 || !(reason instanceof ApiError)) {
         setFormError(toUserMessage(reason));
-      } else if (reason.fieldErrors.some((item) => !FIELDS.has(item.field))) {
+      } else if (fieldErrors.some((item) => !FIELDS.has(item.field))) {
         setFormError("Проверьте правильность заполнения полей.");
       }
     } finally {

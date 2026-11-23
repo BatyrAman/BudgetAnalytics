@@ -4,6 +4,12 @@ INPUTS: principal P (>= 0), NOMINAL annual rate in percent (0..1000),
 start_date < end_date (a zero or negative term is an input error), a
 capitalization mode and a day-count basis (default ACT/365 Fixed).
 
+TERM BOUNDS (input errors, see ``deposit_term_issue``): both dates within
+MIN_DEPOSIT_DATE..MAX_DEPOSIT_DATE (1900-01-01..2200-12-31) and
+end_date <= add_months(start_date, MAX_DEPOSIT_TERM_MONTHS) (600 months =
+50 years). The bound keeps every accepted input inside ``date`` arithmetic
+and bounds the capitalization loop; real deposits are far shorter.
+
 CAPITALIZATION = NONE (simple interest, paid at maturity):
 
     interest = P · r · term_days / 365
@@ -55,6 +61,22 @@ from app.services.finance.money import (
     require_non_negative,
 )
 
+MIN_DEPOSIT_DATE = date(1900, 1, 1)
+MAX_DEPOSIT_DATE = date(2200, 12, 31)
+MAX_DEPOSIT_TERM_MONTHS = 600
+
+# Stable, machine-readable codes of a deposit term problem. They carry no
+# financial data and are safe to return to the client.
+TERM_NOT_POSITIVE = "invalid_date_range"
+DATE_OUT_OF_RANGE = "date_out_of_range"
+TERM_TOO_LONG = "term_too_long"
+
+_TERM_ISSUE_MESSAGES = {
+    TERM_NOT_POSITIVE: "end_date must be after start_date",
+    DATE_OUT_OF_RANGE: "Deposit dates must be between 1900-01-01 and 2200-12-31",
+    TERM_TOO_LONG: "Deposit term must not exceed 600 months",
+}
+
 _MONTHS_PER_PERIOD = {
     Capitalization.MONTHLY: 1,
     Capitalization.QUARTERLY: 3,
@@ -86,6 +108,29 @@ def add_months(start: date, months: int) -> date:
     return date(year, month, day)
 
 
+def deposit_term_issue(start_date: date, end_date: date) -> str | None:
+    """The code of the first rule a deposit term breaks, or ``None`` if valid.
+
+    Checked in this order: date range, positive term, maximum term. The
+    date range goes first so ``add_months`` below never leaves ``date``.
+    """
+
+    for d in (start_date, end_date):
+        if not MIN_DEPOSIT_DATE <= d <= MAX_DEPOSIT_DATE:
+            return DATE_OUT_OF_RANGE
+    if end_date <= start_date:
+        return TERM_NOT_POSITIVE
+    if end_date > add_months(start_date, MAX_DEPOSIT_TERM_MONTHS):
+        return TERM_TOO_LONG
+    return None
+
+
+def term_issue_message(code: str) -> str:
+    """A user-safe English message for a ``deposit_term_issue`` code."""
+
+    return _TERM_ISSUE_MESSAGES[code]
+
+
 def deposit_maturity(
     principal: Decimal | int,
     annual_rate_percent: Decimal | int,
@@ -99,8 +144,11 @@ def deposit_maturity(
     r = validate_rate_percent(annual_rate_percent)
     if not isinstance(start_date, date) or not isinstance(end_date, date):
         raise TypeError("start_date and end_date must be dates")
-    if end_date <= start_date:
+    issue = deposit_term_issue(start_date, end_date)
+    if issue == TERM_NOT_POSITIVE:
         raise FinanceInputError("end_date must be after start_date (term must be positive)")
+    if issue is not None:
+        raise FinanceInputError(term_issue_message(issue))
     capitalization = Capitalization(capitalization)
     term_days = (end_date - start_date).days
 
@@ -134,4 +182,17 @@ def deposit_maturity(
     )
 
 
-__all__ = ["DepositMaturity", "add_months", "deposit_maturity", "FinanceInputError"]
+__all__ = [
+    "DATE_OUT_OF_RANGE",
+    "MAX_DEPOSIT_DATE",
+    "MAX_DEPOSIT_TERM_MONTHS",
+    "MIN_DEPOSIT_DATE",
+    "TERM_NOT_POSITIVE",
+    "TERM_TOO_LONG",
+    "DepositMaturity",
+    "FinanceInputError",
+    "add_months",
+    "deposit_maturity",
+    "deposit_term_issue",
+    "term_issue_message",
+]

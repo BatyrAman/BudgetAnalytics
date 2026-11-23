@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.deposits import DataIssue
+
 
 class DepositBase(BaseModel):
     amount: Decimal = Field(..., gt=0, decimal_places=2, description="Deposit amount")
@@ -49,13 +51,16 @@ class DepositResponse(DepositBase):
 class DepositDetail(DepositResponse):
     bank_name: str
 
-    duration_days: int
+    # None (with data_issue set) for a stored deposit that breaks a term rule.
+    duration_days: int | None
 
-    expected_profit: Decimal
+    expected_profit: Decimal | None
 
-    expected_amount: Decimal
+    expected_amount: Decimal | None
 
     is_active: bool
+
+    data_issue: DataIssue | None = None
 
 
 class DepositListResponse(BaseModel):
@@ -79,9 +84,11 @@ class DepositForecast(BaseModel):
 
     maturity_date: date
 
-    expected_profit: Decimal
+    expected_profit: Decimal | None
 
-    expected_amount: Decimal
+    expected_amount: Decimal | None
+
+    data_issue: DataIssue | None = None
 
 
 class DepositChartItem(BaseModel):

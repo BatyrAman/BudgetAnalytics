@@ -27,7 +27,7 @@ from app.services.analytics.income import IncomeAnalyticsService
 from app.services.analytics.saving import SavingAnalyticsService
 from app.services.analytics.spending import SpendingAnalyticsService
 from app.services.budgets import budget_progress_percent
-from app.services.deposits import expected_profit
+from app.services.deposits import maturity_of, valid_deposits
 
 # DEPRECATED legacy dashboard (all-time "balance" = income − expenses, default
 # currency only). Superseded by GET /dashboard/overview (app/api/overview.py).
@@ -131,10 +131,12 @@ async def get_dashboard(
 
     deposits_result = await db.execute(select(Deposit).where(Deposit.user_id == user_id))
     deposits_overview: list[DepositOverview] = []
-    for d in deposits_result.scalars().all():
+    # Legacy rows with a data_issue have no estimate and are left out here;
+    # they stay visible (with data_issue) in /deposits and /investments.
+    for d in valid_deposits(deposits_result.scalars().all()):
         bank = await db.get(Bank, d.bank_id)
 
-        profit = expected_profit(d)
+        profit = maturity_of(d).interest
 
         deposits_overview.append(
             DepositOverview(

@@ -17,8 +17,8 @@ from app.schemas.deposits import (
     DepositUpdate,
 )
 from app.services.deposit_service import DepositService, to_maturity
-from app.services.deposits import maturity_of
-from app.services.finance import add_months, deposit_maturity
+from app.services.deposits import deposit_data_issue, valid_maturity_of
+from app.services.finance import deposit_maturity
 
 router = APIRouter(prefix="/deposits", tags=["Deposits"])
 
@@ -31,6 +31,7 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
 
 
 def _response(deposit: Deposit) -> DepositResponse:
+    maturity = valid_maturity_of(deposit)
     return DepositResponse(
         id=deposit.id,
         bank_id=deposit.bank_id,
@@ -41,7 +42,8 @@ def _response(deposit: Deposit) -> DepositResponse:
         capitalization=deposit.capitalization,
         start_date=deposit.start_date,
         end_date=deposit.end_date,
-        maturity=to_maturity(maturity_of(deposit), deposit.interest_rate),
+        maturity=None if maturity is None else to_maturity(maturity, deposit.interest_rate),
+        data_issue=deposit_data_issue(deposit),
         created_at=deposit.created_at,
         updated_at=deposit.updated_at,
     )
@@ -62,7 +64,7 @@ async def calculate_deposit(
     currency = await CurrencyRepository(db).get_spec(payload.currency)
     if currency is None:
         raise AppError("Unknown currency", code="unknown_currency")
-    end = payload.end_date or add_months(payload.start_date, payload.term_months or 0)
+    end = payload.maturity_date
     result = deposit_maturity(
         payload.principal,
         payload.interest_rate,

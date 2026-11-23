@@ -29,7 +29,7 @@ from app.models.goal import FinancialGoal
 from app.models.user import User
 from app.services.accounts import AccountService
 from app.services.deposit_service import PERIODS_PER_YEAR
-from app.services.deposits import maturity_of
+from app.services.deposits import maturity_of, valid_deposits
 from app.services.finance import (
     CurrencySpec,
     average,
@@ -315,7 +315,8 @@ class FactSheetBuilder:
                     )
 
         # ---- deposits
-        deposits = list(
+        # Legacy rows with a data_issue have no estimate: no facts about them.
+        deposits = valid_deposits(
             await self.db.scalars(
                 select(Deposit).where(Deposit.user_id == user.id, Deposit.currency_code == cur)
             )

@@ -74,6 +74,16 @@ const deposit: Deposit = {
   start_date: "2026-11-19",
   end_date: "2027-11-19",
   maturity,
+  data_issue: null,
+};
+// A legacy row stored before the term bounds: no estimate, only a stable code.
+const legacyDeposit: Deposit = {
+  ...deposit,
+  id: 43,
+  start_date: "2025-01-01",
+  end_date: "2100-01-01",
+  maturity: null,
+  data_issue: "term_too_long",
 };
 const overview = {
   generated_at: "2026-11-19T05:00:00Z",
@@ -220,6 +230,88 @@ describe("DepositCalculator (DP-3)", () => {
     expect(screen.getByLabelText(/^Сумма/)).toHaveAttribute("aria-invalid", "true");
   });
 
+  it("rejects a 601-month term in date mode on the end date field", async () => {
+    const u = userEvent.setup();
+    renderWithSWR(<DepositCalculator />);
+    await u.type(screen.getByLabelText(/^Сумма/), "1000");
+    await u.type(screen.getByLabelText(/^Номинальная ставка/), "10");
+    await u.click(screen.getByRole("button", { name: "Дата окончания" }));
+    // Start defaults to today (2026-11-19): 600 months end on 2076-11-19.
+    fireEvent.change(screen.getByLabelText(/^Дата окончания/), {
+      target: { value: "2076-11-20" },
+    });
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    expect(
+      await screen.findByText("Срок вклада — не больше 600 месяцев (50 лет)."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Дата окончания/)).toHaveAttribute("aria-invalid", "true");
+    expect(api.calculateDeposit).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByLabelText(/^Дата окончания/), {
+      target: { value: "2076-11-19" },
+    });
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    await waitFor(() => expect(api.calculateDeposit).toHaveBeenCalledTimes(1));
+  });
+
+  it("rejects a 601-month term in months mode on the term field", async () => {
+    const u = userEvent.setup();
+    renderWithSWR(<DepositCalculator />);
+    await u.type(screen.getByLabelText(/^Сумма/), "1000");
+    await u.type(screen.getByLabelText(/^Номинальная ставка/), "10");
+    await u.type(screen.getByLabelText(/^Срок в месяцах/), "601");
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    expect(await screen.findByText("Срок — целое число месяцев от 1 до 600.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Срок в месяцах/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Проверьте правильность заполнения полей.")).not.toBeInTheDocument();
+    expect(api.calculateDeposit).not.toHaveBeenCalled();
+
+    await u.clear(screen.getByLabelText(/^Срок в месяцах/));
+    await u.type(screen.getByLabelText(/^Срок в месяцах/), "600");
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    await waitFor(() => expect(api.calculateDeposit).toHaveBeenCalledTimes(1));
+    expect(api.calculateDeposit.mock.calls[0][0]).toMatchObject({ term_months: 600 });
+  });
+
+  it("checks date bounds and the computed maturity in months mode", async () => {
+    const u = userEvent.setup();
+    renderWithSWR(<DepositCalculator />);
+    await u.type(screen.getByLabelText(/^Сумма/), "1000");
+    await u.type(screen.getByLabelText(/^Номинальная ставка/), "10");
+    await u.type(screen.getByLabelText(/^Срок в месяцах/), "12");
+    fireEvent.change(screen.getByLabelText(/^Дата начала/), { target: { value: "1899-12-31" } });
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    expect(await screen.findByText("Дата не может быть раньше 01.01.1900.")).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Дата начала/)).toHaveAttribute("aria-invalid", "true");
+
+    fireEvent.change(screen.getByLabelText(/^Дата начала/), { target: { value: "2200-06-01" } });
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    expect(
+      await screen.findByText("Дата окончания вклада не может быть позже 31.12.2200."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Срок в месяцах/)).toHaveAttribute("aria-invalid", "true");
+    expect(api.calculateDeposit).not.toHaveBeenCalled();
+  });
+
+  it("shows a backend error without a field (loc: []) on the term field", async () => {
+    api.calculateDeposit.mockRejectedValueOnce(
+      new ApiError({
+        status: 422,
+        code: "validation_error",
+        fieldErrors: [{ field: "_", message: "Некорректное значение.", type: "value_error" }],
+      }),
+    );
+    const u = userEvent.setup();
+    renderWithSWR(<DepositCalculator />);
+    await u.type(screen.getByLabelText(/^Сумма/), "1000");
+    await u.type(screen.getByLabelText(/^Номинальная ставка/), "10");
+    await u.type(screen.getByLabelText(/^Срок в месяцах/), "12");
+    await u.click(screen.getByRole("button", { name: "Рассчитать" }));
+    expect(await screen.findByText(/срок — не больше 600 месяцев/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/^Срок в месяцах/)).toHaveAttribute("aria-invalid", "true");
+    expect(screen.queryByText("Проверьте правильность заполнения полей.")).not.toBeInTheDocument();
+  });
+
   it("saves the calculation as a deposit with maturity_date as end_date; bank is required", async () => {
     const u = userEvent.setup();
     renderWithSWR(<DepositCalculator />);
@@ -329,6 +421,137 @@ describe("DepositsList (DP-1) and form", () => {
     expect(api.createDeposit.mock.calls[0][0]).not.toHaveProperty("effective_rate");
   });
 
+  it("shows a legacy deposit with data_issue without any estimate", async () => {
+    api.listDeposits.mockResolvedValue({
+      items: [deposit, legacyDeposit],
+      total: 2,
+      limit: 10,
+      offset: 0,
+    });
+    renderWithSWR(<DepositsList />);
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("Расчёт недоступен: Срок больше 600 месяцев (50 лет).");
+    expect(notice).toHaveTextContent("не учитывается в итогах");
+    // Only the valid deposit shows estimate lines.
+    expect(screen.getAllByText(/Доход к концу срока/)).toHaveLength(1);
+  });
+
+  it.each([
+    ["term_too_long", "Срок вклада не может превышать 600 месяцев (50 лет)."],
+    ["date_out_of_range", "Даты вклада должны быть в диапазоне 01.01.1900 — 31.12.2200."],
+    ["invalid_date_range", "Дата окончания должна быть позже даты начала."],
+  ])("maps %s from the API to the end date field", async (code, message) => {
+    api.updateDeposit.mockRejectedValueOnce(new ApiError({ status: 422, code }));
+    const u = userEvent.setup();
+    renderWithSWR(<DepositsList />);
+    await u.click(await screen.findByRole("button", { name: "Изменить депозит Халык Банк" }));
+    const dialog = screen.getByRole("dialog");
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^Дата окончания/)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+  });
+
+  async function openCreateForm(u: ReturnType<typeof userEvent.setup>) {
+    renderWithSWR(<DepositsList />);
+    await u.click(screen.getAllByRole("button", { name: "Добавить депозит" })[0]);
+    const dialog = screen.getByRole("dialog");
+    await within(dialog).findByRole("option", { name: "Каспи Банк" });
+    await u.selectOptions(within(dialog).getByLabelText(/^Банк/), "4");
+    await u.type(within(dialog).getByLabelText(/^Сумма/), "1000");
+    await u.type(within(dialog).getByLabelText(/^Номинальная ставка/), "10");
+    return dialog;
+  }
+
+  it("rejects a 601-month term on the end date field before calling the API", async () => {
+    const u = userEvent.setup();
+    const dialog = await openCreateForm(u);
+    // Start defaults to today (2026-11-19): 600 months end on 2076-11-19.
+    fireEvent.change(within(dialog).getByLabelText(/^Дата окончания/), {
+      target: { value: "2076-11-20" },
+    });
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    expect(
+      await within(dialog).findByText("Срок вклада — не больше 600 месяцев (50 лет)."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^Дата окончания/)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(api.createDeposit).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialog).getByLabelText(/^Дата окончания/), {
+      target: { value: "2076-11-19" },
+    });
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    await waitFor(() => expect(api.createDeposit).toHaveBeenCalledTimes(1));
+  });
+
+  it.each([
+    ["Дата начала", "1899-12-31", "Дата не может быть раньше 01.01.1900."],
+    ["Дата окончания", "2201-01-01", "Дата не может быть позже 31.12.2200."],
+  ])("validates the %s bound (%s) on the client", async (label, value, message) => {
+    const u = userEvent.setup();
+    const dialog = await openCreateForm(u);
+    fireEvent.change(within(dialog).getByLabelText(new RegExp(`^${label}`)), {
+      target: { value },
+    });
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    expect(await within(dialog).findByText(message)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(new RegExp(`^${label}`))).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(api.createDeposit).not.toHaveBeenCalled();
+  });
+
+  it("maps backend date-bound and field-less (loc: []) errors to the date fields", async () => {
+    api.createDeposit.mockRejectedValueOnce(
+      new ApiError({
+        status: 422,
+        code: "validation_error",
+        fieldErrors: [
+          {
+            field: "start_date",
+            message: "Значение не может быть отрицательным.",
+            type: "greater_than_equal",
+          },
+          { field: "end_date", message: "Значение слишком большое.", type: "less_than_equal" },
+        ],
+      }),
+    );
+    api.createDeposit.mockRejectedValueOnce(
+      new ApiError({
+        status: 422,
+        code: "validation_error",
+        fieldErrors: [{ field: "_", message: "Некорректное значение.", type: "value_error" }],
+      }),
+    );
+    const u = userEvent.setup();
+    const dialog = await openCreateForm(u);
+    await u.type(within(dialog).getByLabelText(/^Дата окончания/), "2027-11-19");
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    expect(
+      await within(dialog).findByText("Дата не может быть раньше 01.01.1900."),
+    ).toBeInTheDocument();
+    expect(within(dialog).getByText("Дата не может быть позже 31.12.2200.")).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Значение не может быть отрицательным."),
+    ).not.toBeInTheDocument();
+
+    await u.click(within(dialog).getByRole("button", { name: "Сохранить депозит" }));
+    expect(await within(dialog).findByText(/срок — не больше 600 месяцев/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/^Дата окончания/)).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    expect(
+      within(dialog).queryByText("Проверьте правильность заполнения полей."),
+    ).not.toBeInTheDocument();
+  });
+
   it("updates an existing deposit without currency and clears ГЭСВ with null", async () => {
     const u = userEvent.setup();
     renderWithSWR(<DepositsList />);
@@ -374,6 +597,15 @@ describe("DepositDetail (DP-2)", () => {
     renderWithSWR(<DepositDetail id={42} />);
     expect(await screen.findByText("Допущения backend")).toBeInTheDocument();
     expect(screen.getByText("Some new assumption.")).toBeInTheDocument();
+  });
+
+  it("shows a data_issue notice instead of the estimate", async () => {
+    api.getDeposit.mockResolvedValue({ ...legacyDeposit, data_issue: "date_out_of_range" });
+    renderWithSWR(<DepositDetail id={43} />);
+    const notice = await screen.findByRole("status");
+    expect(notice).toHaveTextContent("Даты вне допустимого диапазона 01.01.1900 — 31.12.2200.");
+    expect(screen.queryByText("Эффективная годовая ставка (расчёт)")).not.toBeInTheDocument();
+    expect(screen.queryByText(/проценты округляются один раз/)).not.toBeInTheDocument();
   });
 
   it("shows deposit_not_found as a Russian error", async () => {

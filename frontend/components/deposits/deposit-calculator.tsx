@@ -18,8 +18,13 @@ import { DepositFormDialog } from "./deposit-form";
 import { Assumptions, DetailLine, FieldError, MaturityFacts } from "./deposit-parts";
 import {
   CAPITALIZATION_LABELS,
+  MATURITY_TOO_LATE,
+  MAX_DEPOSIT_DATE,
   SUPPORTED_CURRENCIES,
+  addMonthsIso,
+  dateBoundError,
   dateRangeError,
+  depositFieldErrors,
   nominalRateError,
   normalizeDecimal,
   principalError,
@@ -105,8 +110,17 @@ export function DepositCalculator() {
     if (rate) next.interest_rate = rate;
     if (termMode === "months") {
       if (!startDate) next.start_date = "Укажите дату начала.";
+      else {
+        const bound = dateBoundError(startDate);
+        if (bound) next.start_date = bound;
+      }
       const term = termMonthsError(values.term_months);
       if (term) next.term_months = term;
+      // The end computed from the term must not pass the last allowed date.
+      else if (!next.start_date) {
+        const end = addMonthsIso(startDate, Number(values.term_months.trim()));
+        if (end > MAX_DEPOSIT_DATE) next.term_months = MATURITY_TOO_LATE;
+      }
     } else {
       const dates = dateRangeError(startDate, values.end_date);
       if (dates.start) next.start_date = dates.start;
@@ -150,7 +164,8 @@ export function DepositCalculator() {
         if (reason.code === "invalid_date_range") {
           apiErrors[termMode === "date" ? "end_date" : "term_months"] = toUserMessage(reason);
         }
-        for (const item of reason.fieldErrors) {
+        const termField = termMode === "date" ? "end_date" : "term_months";
+        for (const item of depositFieldErrors(reason.fieldErrors, termField)) {
           if (FIELDS.has(item.field)) apiErrors[item.field as Field] = item.message;
         }
       }

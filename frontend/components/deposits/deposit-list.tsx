@@ -10,7 +10,12 @@ import { formatDate, formatMoney, formatPercent } from "@/lib/format";
 import type { Bank, Deposit } from "@/lib/types";
 
 import { DepositFormDialog } from "./deposit-form";
-import { CAPITALIZATION_LABELS, bankInitials, formatRateExact } from "./deposit-utils";
+import {
+  CAPITALIZATION_LABELS,
+  DATA_ISSUE_LABELS,
+  bankInitials,
+  formatRateExact,
+} from "./deposit-utils";
 
 const PAGE_SIZE = 10;
 
@@ -49,12 +54,21 @@ function DepositCard({
         <span>
           Капитализация <b>{CAPITALIZATION_LABELS[deposit.capitalization]}</b>
         </span>
-        <span>
-          Доход к концу срока <b>{formatMoney(deposit.maturity.interest, currency)}</b>
-        </span>
-        <span>
-          Сумма к концу срока <b>{formatMoney(deposit.maturity.maturity_amount, currency)}</b>
-        </span>
+        {deposit.maturity ? (
+          <>
+            <span>
+              Доход к концу срока <b>{formatMoney(deposit.maturity.interest, currency)}</b>
+            </span>
+            <span>
+              Сумма к концу срока <b>{formatMoney(deposit.maturity.maturity_amount, currency)}</b>
+            </span>
+          </>
+        ) : (
+          <span className="deposit-data-issue" role="status">
+            Расчёт недоступен: {deposit.data_issue ? DATA_ISSUE_LABELS[deposit.data_issue] : ""}{" "}
+            Исправьте даты — вклад не учитывается в итогах.
+          </span>
+        )}
       </div>
       <button
         type="button"

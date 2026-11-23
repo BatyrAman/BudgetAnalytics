@@ -2413,7 +2413,8 @@ summary:focus-visible,
   padding: 8px;
 }
 .inline-notice,
-.category-alert {
+.category-alert,
+.deposit-data-issue {
   padding: 10px 12px;
   border: 1px solid var(--warning);
   border-radius: 8px;

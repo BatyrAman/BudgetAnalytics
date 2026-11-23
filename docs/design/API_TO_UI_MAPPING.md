@@ -67,7 +67,9 @@
 | 404 | `goal_not_found` | Цели нет или она чужая | `/goals/{id}` |
 | 409 | `goal_name_taken` | Цель с таким именем уже есть (уникальный индекс) | `POST/PATCH /goals` |
 | 409 | `duplicate` | Иное нарушение уникальности (запасной код для 23505) | Любой |
-| 422 | `invalid_date_range` | Конец периода раньше начала | `PATCH /deposits/{id}`; `GET /transactions` (`start_date`/`end_date`); аналитика (`date_from`/`date_to`) |
+| 422 | `invalid_date_range` | Конец периода раньше начала | `PATCH /deposits/{id}`, `POST/PUT /investments` (legacy); `GET /transactions` (`start_date`/`end_date`); аналитика (`date_from`/`date_to`) |
+| 422 | `date_out_of_range` | Дата вклада вне 1900-01-01 — 2200-12-31 | `PATCH /deposits/{id}` (комбинация дат), `POST/PUT /investments` |
+| 422 | `term_too_long` | Срок вклада больше 600 месяцев | `PATCH /deposits/{id}`, `POST/PUT /investments` |
 | 422 | `invalid_amount_range` | `max_amount` < `min_amount` | `GET /transactions` |
 | 422 | `period_too_long` | Период больше 5 лет | Аналитика с `date_from`/`date_to` |
 | 422 | `invalid_month` | `month` не в формате `YYYY-MM` | `/budgets/utilization`, `/budgets/{id}/utilization`, аналитика по месяцу |
@@ -232,10 +234,14 @@ E-mail хранится в нижнем регистре; при входе ре
 
 | UI | Метод и путь | Детали |
 |---|---|---|
-| DP-3 | `POST /deposits/calculate` | `principal*` (> 0), `currency` (по умолч. **KZT**), `interest_rate*` (0–100, номинальная годовая), `capitalization` (`none`, `monthly`, `quarterly`, `annually`), `start_date*`, **ровно одно** из `end_date` или `term_months` (1–600) → `{principal, currency_code, interest_rate, capitalization, start_date, maturity_date, maturity}`; ничего не сохраняется |
-| DP-1 | `GET /deposits` | Страница; каждый элемент с `maturity` |
-| DP-1/2 | `POST /deposits` | `bank_id*`, `principal*`, `currency`, `interest_rate*`, `effective_rate` (ГЭСВ, 0–1000, хранится как есть, **никогда не используется как номинальная**), `capitalization`, `start_date*`, `end_date*` (> `start_date`) |
-| DP-2 | `GET/PATCH/DELETE /deposits/{id}` | PATCH проверяет `end_date > start_date` (422) |
+| DP-3 | `POST /deposits/calculate` | `principal*` (> 0), `currency` (по умолч. **KZT**), `interest_rate*` (0–100, номинальная годовая), `capitalization` (`none`, `monthly`, `quarterly`, `annually`), `start_date*`, **ровно одно** из `end_date` или `term_months` (1–600); дата окончания (в т. ч. рассчитанная) ≤ 2200-12-31 → `{principal, currency_code, interest_rate, capitalization, start_date, maturity_date, maturity}`; ничего не сохраняется |
+| DP-1 | `GET /deposits` | Страница; каждый элемент с `maturity` и `data_issue` (см. ниже) |
+| DP-1/2 | `POST /deposits` | `bank_id*`, `principal*`, `currency`, `interest_rate*`, `effective_rate` (ГЭСВ, 0–1000, хранится как есть, **никогда не используется как номинальная**), `capitalization`, `start_date*`, `end_date*` (> `start_date`, срок ≤ 600 мес.); обе даты в 1900-01-01 — 2200-12-31 (ошибки схемы → `validation_error`) |
+| DP-2 | `GET/PATCH/DELETE /deposits/{id}` | PATCH при изменении дат проверяет их вместе с сохранённой датой: `invalid_date_range` / `date_out_of_range` / `term_too_long` (422). Правка без дат на вкладе с `data_issue` разрешена |
+
+**Границы срока (T4)** — `services/finance/deposit.py::deposit_term_issue`: даты 1900-01-01 — 2200-12-31, `end_date > start_date`, `end_date ≤ start_date + 600 мес.` (с прижатием к концу месяца). Действуют для `/deposits`, калькулятора и legacy `/investments` (POST/PUT).
+
+**Вклады с `data_issue`** — записи, сохранённые legacy API до T4 и нарушающие границы, **не удаляются**: `maturity = null` (в `/investments/{id}` и `/forecast` — `duration_days`/`expected_profit`/`expected_amount = null`), `data_issue` ∈ `invalid_date_range` | `date_out_of_range` | `term_too_long` (без финансовых данных). Такие вклады исключены из всех агрегатов: `/dashboard/overview` (`deposits_*`), `/dashboard` (список вкладов), `/investments/statistics`, `/investments/chart`, факты AI-советника. UI показывает уведомление вместо расчёта.
 
 **Расчёт (BE)** — `services/finance/deposit.py`, ACT/365 Fixed:
 - без капитализации: `interest = P · r · days / 365`;

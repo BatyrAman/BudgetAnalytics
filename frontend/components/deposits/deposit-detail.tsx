@@ -13,7 +13,12 @@ import { formatDate, formatMoney, formatPercent } from "@/lib/format";
 
 import { DepositFormDialog, useRevalidateDeposits } from "./deposit-form";
 import { Assumptions, DetailLine, MaturityFacts } from "./deposit-parts";
-import { CAPITALIZATION_LABELS, bankInitials, formatRateExact } from "./deposit-utils";
+import {
+  CAPITALIZATION_LABELS,
+  DATA_ISSUE_LABELS,
+  bankInitials,
+  formatRateExact,
+} from "./deposit-utils";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 
 function DeleteDialog({ id, onCancel }: { id: number; onCancel: () => void }) {
@@ -142,8 +147,18 @@ export function DepositDetail({ id }: { id: number }) {
           <h2>Расчёт к концу срока</h2>
           <p>Оценка; расчёт банка может отличаться</p>
         </header>
-        <MaturityFacts maturity={deposit.maturity} currency={currency} />
-        <Assumptions items={deposit.maturity.assumptions} />
+        {deposit.maturity ? (
+          <>
+            <MaturityFacts maturity={deposit.maturity} currency={currency} />
+            <Assumptions items={deposit.maturity.assumptions} />
+          </>
+        ) : (
+          <p className="deposit-data-issue" role="status">
+            Расчёт недоступен:{" "}
+            {deposit.data_issue ? DATA_ISSUE_LABELS[deposit.data_issue] : "некорректные данные."}{" "}
+            Исправьте даты вклада — до этого он не учитывается в итогах.
+          </p>
+        )}
       </section>
       {editing && <DepositFormDialog deposit={deposit} onClose={() => setEditing(false)} />}
       {confirmDelete && <DeleteDialog id={id} onCancel={() => setConfirmDelete(false)} />}

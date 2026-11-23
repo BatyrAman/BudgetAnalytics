@@ -21,30 +21,36 @@ from app.schemas.deposit import (
     DepositStatistics,
     DepositUpdate,
 )
-from app.services.deposits import expected_profit, maturity_of
+from app.services.deposits import (
+    deposit_data_issue,
+    maturity_of,
+    valid_deposits,
+    valid_maturity_of,
+    valid_term_clause,
+    validate_deposit_term,
+)
 
 # DEPRECATED: superseded by /deposits (currency, capitalization, effective rate,
 # calculator). Kept for existing clients; totals cover the default currency only.
+# Deposits stored before the term bounds existed keep being listed, but get no
+# estimate (``data_issue``) and are excluded from statistics and the chart.
 router = APIRouter(prefix="/investments", tags=["Investments (deprecated)"], deprecated=True)
-
-
-def _expected_profit(deposit: Deposit) -> Decimal:
-    return expected_profit(deposit)
 
 
 async def _to_detail(db: AsyncSession, deposit: Deposit) -> DepositDetail:
 
     bank = await db.get(Bank, deposit.bank_id)
 
-    maturity = maturity_of(deposit)
+    maturity = valid_maturity_of(deposit)
 
     return DepositDetail(
         **DepositResponse.model_validate(deposit).model_dump(),
         bank_name=bank.name if bank else "—",
-        duration_days=maturity.term_days,
-        expected_profit=maturity.interest,
-        expected_amount=maturity.maturity_amount,
+        duration_days=None if maturity is None else maturity.term_days,
+        expected_profit=None if maturity is None else maturity.interest,
+        expected_amount=None if maturity is None else maturity.maturity_amount,
         is_active=deposit.end_date >= date.today(),
+        data_issue=deposit_data_issue(deposit),
     )
 
 
@@ -88,11 +94,7 @@ async def create_deposit(
             detail="Bank not found",
         )
 
-    if payload.end_date <= payload.start_date:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="end_date must be after start_date",
-        )
+    validate_deposit_term(payload.start_date, payload.end_date)
 
     deposit = Deposit(
         amount=payload.amount,
@@ -150,10 +152,10 @@ async def get_statistics(
             Deposit.currency_code == current_user.default_currency_code,
         )
     )
-    deposits = result.scalars().all()
+    deposits = valid_deposits(result.scalars().all())
 
     total_amount = sum((d.amount for d in deposits), Decimal("0"))
-    total_profit = sum((_expected_profit(d) for d in deposits), Decimal("0"))
+    total_profit = sum((maturity_of(d).interest for d in deposits), Decimal("0"))
 
     return DepositStatistics(
         total_deposits=len(deposits),
@@ -181,6 +183,7 @@ async def get_chart(
         .where(
             Deposit.user_id == current_user.id,
             Deposit.currency_code == current_user.default_currency_code,
+            valid_term_clause(),
         )
         .group_by(Bank.name)
         .order_by(func.sum(Deposit.amount).desc())
@@ -216,13 +219,14 @@ async def get_forecast(
 ) -> DepositForecast:
 
     deposit = await _get_owned_deposit(db, deposit_id, current_user.id)
-    profit = _expected_profit(deposit)
+    maturity = valid_maturity_of(deposit)
 
     return DepositForecast(
         deposit_id=deposit.id,
         maturity_date=deposit.end_date,
-        expected_profit=profit,
-        expected_amount=deposit.amount + profit,
+        expected_profit=None if maturity is None else maturity.interest,
+        expected_amount=None if maturity is None else maturity.maturity_amount,
+        data_issue=deposit_data_issue(deposit),
     )
 
 
@@ -238,8 +242,18 @@ async def update_deposit(
 ) -> Deposit:
 
     deposit = await _get_owned_deposit(db, deposit_id, current_user.id)
+    changes = payload.model_dump(exclude_unset=True)
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    if changes.get("start_date") is not None or changes.get("end_date") is not None:
+        # Same rule as POST, checked against the stored date that is not
+        # changing. Edits leaving the dates alone stay possible on a legacy
+        # deposit with a data_issue.
+        validate_deposit_term(
+            changes.get("start_date") or deposit.start_date,
+            changes.get("end_date") or deposit.end_date,
+        )
+
+    for field, value in changes.items():
         setattr(deposit, field, value)
 
     db.add(deposit)

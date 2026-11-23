@@ -38,8 +38,8 @@ describe("errorFromResponse", () => {
       }),
     );
     expect(error.fieldErrors).toEqual([
-      { field: "amount", message: "Значение должно быть больше нуля." },
-      { field: "category_id", message: "Обязательное поле." },
+      { field: "amount", message: "Значение должно быть больше нуля.", type: "greater_than" },
+      { field: "category_id", message: "Обязательное поле.", type: "missing" },
     ]);
   });
 

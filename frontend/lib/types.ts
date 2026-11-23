@@ -200,6 +200,8 @@ export type Maturity = {
   effective_annual_rate: string | null;
   assumptions: string[];
 };
+/** Why a stored (legacy) deposit has no estimate; see `/deposits` `data_issue`. */
+export type DepositDataIssue = "invalid_date_range" | "date_out_of_range" | "term_too_long";
 export type Deposit = {
   id: number;
   bank_id: number;
@@ -210,7 +212,9 @@ export type Deposit = {
   capitalization: Capitalization;
   start_date: string;
   end_date: string;
-  maturity: Maturity;
+  /** null when `data_issue` is set: no estimate, excluded from totals. */
+  maturity: Maturity | null;
+  data_issue: DepositDataIssue | null;
 };
 export type DepositCalculation = {
   principal: string;

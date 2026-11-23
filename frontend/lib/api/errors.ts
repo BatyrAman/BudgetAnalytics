@@ -6,7 +6,8 @@
  * falling back to the HTTP status. Internal details are never shown to users.
  */
 
-export type FieldError = { field: string; message: string };
+/** `type` is the stable Pydantic issue type, for screens that refine `message`. */
+export type FieldError = { field: string; message: string; type?: string };
 
 type ValidationIssue = { loc?: (string | number)[]; msg?: string; type?: string };
 
@@ -74,6 +75,8 @@ const CODE_MESSAGES: Record<string, string> = {
   deposit_not_found: "Депозит не найден.",
   goal_not_found: "Цель не найдена.",
   invalid_date_range: "Дата окончания должна быть позже даты начала.",
+  date_out_of_range: "Даты вклада должны быть в диапазоне 01.01.1900 — 31.12.2200.",
+  term_too_long: "Срок вклада не может превышать 600 месяцев (50 лет).",
   duplicate: "Запись с такими данными уже существует.",
   account_name_taken: "Счёт с таким названием уже есть.",
   goal_name_taken: "Цель с таким названием уже есть.",
@@ -162,7 +165,11 @@ function fieldErrorsFrom(detail: ErrorBody["detail"]): FieldError[] {
   if (!Array.isArray(detail)) return [];
   return detail.map((issue) => {
     const loc = (issue.loc ?? []).filter((part) => part !== "body" && part !== "query");
-    return { field: loc.map(String).join(".") || "_", message: issueMessage(issue) };
+    return {
+      field: loc.map(String).join(".") || "_",
+      message: issueMessage(issue),
+      type: issue.type,
+    };
   });
 }
 
