@@ -125,7 +125,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           )}
         </Link>
-        {!collapsed && <p className="overline sidebar-label">ФИНАНСЫ</p>}
+        
         <nav className="side-nav">{links.map((item) => navItem(item, collapsed))}</nav>
         <div className="sidebar-bottom">
           {bottom.map((item) => (
