@@ -1,0 +1,323 @@
+# Machine-readable Risk Policy (T3). Normative text: POLICY.md.
+#
+# Loaded strictly by orchestrator/risk_policy.py: unknown keys, missing keys,
+# wrong types, unsupported levels, duplicate rule ids, duplicate or conflicting
+# patterns, catch-all allow rules and invalid thresholds are all errors.
+# Nothing has a default; every security-relevant value is explicit here.
+#
+# Pattern semantics (POLICY.md section 5.0):
+#   * Repository-relative POSIX paths, matched against the whole path.
+#   * "**" is a whole segment and matches zero or more segments; a trailing
+#     "**" matches one or more segments (the contents of a directory).
+#   * "*" matches zero or more characters inside one segment.
+#   * Every other character is literal, including "[", "]", "(", ")", "@".
+#   * L3 rules match case-insensitively; L1 and L2 rules case-sensitively.
+#   * All matching rules apply; the highest level wins. No rule can lower
+#     the level set by another rule. A path matching no rule is L3.
+#   * Paths with a ".github" segment or a segment starting with ".env" are
+#     L3 and never executable, regardless of this file (hard restriction).
+#   * A file named ".gitattributes" (any depth, any case) is always at least
+#     L3, regardless of this file; L1/L2 patterns may not name it.
+
+schema_version = 1
+policy_version = "0.5.0-draft"
+
+[defaults]
+# Must all be "L3" (enforced by the loader).
+unclassified_level = "L3"
+forbidden_level = "L3"
+empty_change_set_level = "L3"
+
+[limits]
+# Measured on the actual Git diff only (POLICY.md section 6.2).
+l1_max_files = 10
+l1_max_lines = 300
+l2_max_files = 25
+l2_max_lines = 1000
+
+[change_rules]
+# Minimum level of a change because of its type or Git entry kind.
+# delete / rename / executable_file must be at least L2; the others must be L3.
+delete = "L2"
+rename = "L2"
+executable_file = "L2"
+binary = "L3"
+mode_change = "L3"
+symlink = "L3"
+submodule = "L3"
+new_top_level = "L3"
+
+# ------------------------------------------------------------------ L3 rules
+
+[[rules]]
+id = "l3.finance"
+level = "L3"
+description = "Financial calculations"
+patterns = [
+  "backend/app/services/finance/**",
+  "backend/app/services/analytics/**",
+  "backend/app/services/deposits.py",
+  "backend/app/services/deposit_service.py",
+  "backend/app/services/financial_summary.py",
+  "backend/app/services/budgets.py",
+  "backend/app/services/goals.py",
+  "backend/app/services/overview.py",
+  "backend/app/services/transactions.py",
+  "backend/app/services/accounts.py",
+  "frontend/lib/format.ts",
+  "frontend/components/deposits/deposit-utils.ts",
+]
+
+[[rules]]
+id = "l3.auth"
+level = "L3"
+description = "Authentication and sessions"
+patterns = [
+  "backend/app/core/security.py",
+  "backend/app/services/auth.py",
+  "backend/app/api/auth.py",
+  "frontend/proxy.ts",
+  "frontend/lib/server/**",
+  "frontend/app/api/**",
+  "frontend/lib/api/http.ts",
+]
+
+[[rules]]
+id = "l3.permissions"
+level = "L3"
+description = "Permissions and tenant isolation"
+patterns = [
+  "backend/app/api/deps.py",
+  "backend/app/repositories/**",
+]
+
+[[rules]]
+id = "l3.database"
+level = "L3"
+description = "Database models, migrations, backup and restore"
+patterns = [
+  "backend/app/models/**",
+  "backend/alembic/**",
+  "backend/alembic.ini",
+  "backend/app/core/database.py",
+  "backend/scripts/**",
+]
+
+[[rules]]
+id = "l3.security"
+level = "L3"
+description = "Security and runtime configuration"
+patterns = [
+  "backend/app/core/config.py",
+  "backend/app/core/middleware.py",
+  "backend/app/core/rate_limit.py",
+  "backend/app/core/errors.py",
+  "backend/app/core/logging.py",
+  "backend/app/services/imports/**",
+  "backend/app/api/upload.py",
+  "backend/app/api/imports.py",
+  "backend/app/integrations/**",
+  "**/Dockerfile",
+  "**/.dockerignore",
+  "**/compose*.yml",
+  "**/compose*.yaml",
+  "**/docker-compose*.yml",
+  "**/docker-compose*.yaml",
+  "**/.gitignore",
+  "**/.gitattributes",
+  "**/.env*",
+  "**/.env*/**",
+  "frontend/next.config.mjs",
+  "SECURITY.md",
+  "docs/SECURITY_REVIEW.md",
+]
+
+[[rules]]
+id = "l3.ci"
+level = "L3"
+description = "CI configuration (also a hard restriction: never executable)"
+patterns = [
+  ".github/**",
+  "**/.github/**",
+]
+
+[[rules]]
+id = "l3.orchestrator"
+level = "L3"
+description = "Orchestrator rules, Risk Policy and its implementation"
+patterns = [
+  ".github/ai/**",
+  ".github/ai/policy/**",
+  ".github/ai/orchestrator/risk_policy.py",
+  ".github/ai/orchestrator/paths.py",
+]
+
+[[rules]]
+id = "l3.dependencies"
+level = "L3"
+description = "Dependencies and toolchain"
+patterns = [
+  "**/requirements*.txt",
+  "**/pyproject.toml",
+  "**/package.json",
+  "**/pnpm-lock.yaml",
+  "**/pnpm-workspace.yaml",
+]
+
+[[rules]]
+id = "l3.ai_policy"
+level = "L3"
+description = "AI policy and agent instructions"
+patterns = [
+  "backend/app/services/ai/**",
+  "CLAUDE.md",
+  "AGENTS.md",
+  ".claude/**",
+]
+
+[[rules]]
+id = "l3.legal"
+level = "L3"
+description = "Legal documents"
+patterns = [
+  "PRIVACY_POLICY.md",
+  "TERMS_OF_SERVICE.md",
+  "DISCLAIMER.md",
+  "THIRD_PARTY_NOTICES.md",
+  "docs/legal/**",
+]
+
+[[rules]]
+id = "l3.tests"
+level = "L3"
+description = "Tests of L3 areas"
+patterns = [
+  "backend/tests/unit/finance/**",
+  "backend/tests/unit/ai/**",
+  "backend/tests/unit/imports/**",
+  "backend/tests/migrations/**",
+  "backend/tests/unit/test_calculations.py",
+  "backend/tests/unit/test_goal_progress.py",
+  "backend/tests/unit/test_security.py",
+  "backend/tests/unit/test_config.py",
+  "backend/tests/unit/test_logging.py",
+  "backend/tests/integration/test_auth_api.py",
+  "backend/tests/integration/test_auth_tokens.py",
+  "backend/tests/integration/test_oauth2_token.py",
+  "backend/tests/integration/test_tenant_isolation.py",
+  "backend/tests/integration/test_hardening.py",
+  "backend/tests/integration/test_upload_api.py",
+  "backend/tests/integration/test_imports_api.py",
+  "backend/tests/integration/test_database.py",
+  "backend/tests/integration/test_repositories.py",
+  "backend/tests/integration/test_financial_summary.py",
+  "backend/tests/integration/test_deposit_term_bounds_api.py",
+  "backend/tests/integration/test_deposits_overview_api.py",
+  "backend/tests/integration/test_budget_utilization_all_api.py",
+  "backend/tests/integration/test_analytics_api.py",
+  "backend/tests/integration/test_advisor_api.py",
+  "frontend/lib/format.test.ts",
+  "frontend/components/deposits/deposit-utils.test.ts",
+  "frontend/e2e/auth.spec.ts",
+  "frontend/e2e/password.spec.ts",
+]
+
+[[rules]]
+id = "l3.test_infrastructure"
+level = "L3"
+description = "Shared test infrastructure that can weaken every test"
+patterns = [
+  "backend/tests/conftest.py",
+  "backend/tests/**/conftest.py",
+  "backend/tests/**/helpers.py",
+  "backend/tests/unit/finance/reference.py",
+  "frontend/tests/**",
+  "frontend/e2e/global-setup.ts",
+  "frontend/e2e/helpers.ts",
+  "frontend/e2e/start-backend.sh",
+]
+
+# ------------------------------------------------------------------ L2 rules
+
+[[rules]]
+id = "l2.backend_app"
+level = "L2"
+description = "Backend application code outside L3 areas"
+patterns = [
+  "backend/app/__init__.py",
+  "backend/app/main.py",
+  "backend/app/core/__init__.py",
+  "backend/app/api/**",
+  "backend/app/schemas/**",
+  "backend/app/services/**",
+  "backend/app/tasks/**",
+  "backend/app/utils/**",
+]
+
+[[rules]]
+id = "l2.backend_tests"
+level = "L2"
+description = "Other backend tests"
+patterns = [
+  "backend/tests/**",
+]
+
+[[rules]]
+id = "l2.frontend_app"
+level = "L2"
+description = "Frontend application code, styles and assets outside L3 areas"
+patterns = [
+  "frontend/app/**",
+  "frontend/components/**",
+  "frontend/lib/**",
+  "frontend/public/**",
+  "frontend/next-env.d.ts",
+]
+
+[[rules]]
+id = "l2.frontend_tests"
+level = "L2"
+description = "Other frontend end-to-end tests"
+patterns = [
+  "frontend/e2e/**",
+]
+
+[[rules]]
+id = "l2.tool_config"
+level = "L2"
+description = "Frontend tool configuration"
+patterns = [
+  "frontend/eslint.config.mjs",
+  "frontend/postcss.config.mjs",
+  "frontend/playwright.config.ts",
+  "frontend/vitest.config.mts",
+  "frontend/.prettierrc",
+  "frontend/.prettierignore",
+  "frontend/tsconfig.json",
+]
+
+[[rules]]
+id = "l2.docs"
+level = "L2"
+description = "Root documents, operational docs and external AI tool context"
+patterns = [
+  "README.md",
+  "CONTRIBUTING.md",
+  "CODE_OF_CONDUCT.md",
+  "docs/DEPLOYMENT.md",
+  "docs/DOCKER_COMPOSE.md",
+  "docs/design/v0/**",
+]
+
+# ------------------------------------------------------------------ L1 rules
+# Copy-only files are registered here as additional L1 rules with an id
+# starting with "l1.copy_only." (a policy change, POLICY.md section 12).
+# None are registered today.
+
+[[rules]]
+id = "l1.docs"
+level = "L1"
+description = "Documentation outside legal and the docs listed above"
+patterns = [
+  "docs/**",
+]
